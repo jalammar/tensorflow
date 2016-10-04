@@ -69,7 +69,8 @@ public class TensorflowImageListener implements OnImageAvailableListener {
     private int previewHeight = 0;
     private byte[][] yuvBytes;
     private int[] rgbBytes = null;
-    private int[] mnistPixelBytes = null;
+    private int[] croppedRgbBytes = null;
+    private byte[] mnistPixelBytes = null;
     private Bitmap rgbFrameBitmap = null;
     private Bitmap croppedBitmap = null;
 
@@ -219,6 +220,19 @@ public class TensorflowImageListener implements OnImageAvailableListener {
             // Resize image that the camera gave us to 28 x 28
             drawResizedBitmap(rgbFrameBitmap, croppedBitmap);
 
+
+        //Get planes of croppedBitmap
+        croppedRgbBytes = new int[INPUT_SIZE * INPUT_SIZE];
+        croppedBitmap.getPixels(croppedRgbBytes, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE);
+
+        mnistPixelBytes = new byte[INPUT_SIZE * INPUT_SIZE];
+        ImageUtils.convertARGB8888ToMNISTPIXEL(
+                    croppedRgbBytes,       // input
+                    mnistPixelBytes, // output will be stored here
+                    INPUT_SIZE,
+                    INPUT_SIZE
+            );
+
             // Prepare for format conversion
             // Get croppedBitmap's bytes
 
@@ -242,6 +256,7 @@ public class TensorflowImageListener implements OnImageAvailableListener {
             if (SAVE_PREVIEW_BITMAP) {
                 ImageUtils.saveBitmap(croppedBitmap);
             }
+        computing = false;
 
 //            handler.post(
 //                    new Runnable() {
