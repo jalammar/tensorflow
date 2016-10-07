@@ -48,7 +48,7 @@ public class ImageUtils {
    *
    * @param bitmap The bitmap to save.
    */
-  public static void saveBitmap(final Bitmap bitmap) {
+  public static String saveBitmap(final Bitmap bitmap) {
     final String root =
         Environment.getExternalStorageDirectory().getAbsolutePath() + File.separator + "tensorflow";
     LOGGER.i("Saving %dx%d bitmap to %s.", bitmap.getWidth(), bitmap.getHeight(), root);
@@ -71,6 +71,8 @@ public class ImageUtils {
     } catch (final Exception e) {
       LOGGER.e(e, "Exception!");
     }
+
+    return myDir + File.separator + fname;
   }
 
   /**

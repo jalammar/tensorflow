@@ -31,9 +31,7 @@ extern "C" {
   Java_org_tensorflow_demo_TensorflowClassifier_##METHOD_NAME  // NOLINT
 
 JNIEXPORT jint JNICALL TENSORFLOW_METHOD(initializeTensorflow)(
-    JNIEnv* env, jobject thiz, jobject java_asset_manager, jstring model,
-    jstring labels, jint num_classes, jint model_input_size, jint image_mean,
-    jfloat image_std, jstring input_name, jstring output_name);
+    JNIEnv* env, jobject thiz, jobject java_asset_manager, jstring model);
 
 JNIEXPORT jstring JNICALL TENSORFLOW_METHOD(classifyImageBmp)(JNIEnv* env,
                                                               jobject thiz,
@@ -41,6 +39,10 @@ JNIEXPORT jstring JNICALL TENSORFLOW_METHOD(classifyImageBmp)(JNIEnv* env,
 
 JNIEXPORT jstring JNICALL TENSORFLOW_METHOD(classifyImageRgb)(
     JNIEnv* env, jobject thiz, jintArray image, jint width, jint height);
+
+
+JNIEXPORT jint JNICALL TENSORFLOW_METHOD(classifyImageMnist)(
+    JNIEnv* env, jobject thiz, jbyteArray image);
 
 #ifdef __cplusplus
 }  // extern "C"

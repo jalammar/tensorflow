@@ -44,6 +44,7 @@ using namespace tensorflow;
 // Global variables that holds the Tensorflow classifier.
 static std::unique_ptr<tensorflow::Session> session;
 
+static const int IMAGE_SIZE = 28 * 28;
 static std::vector<std::string> g_label_strings;
 static bool g_compute_graph_initialized = false;
 // static mutex g_compute_graph_mutex(base::LINKER_INITIALIZED);
@@ -86,13 +87,8 @@ inline static int64 CurrentThreadTimeUs() {
 }
 
 JNIEXPORT jint JNICALL TENSORFLOW_METHOD(initializeTensorflow)(
-    JNIEnv* env, jobject thiz, jobject java_asset_manager, jstring model,
-    jstring labels, jint num_classes, jint model_input_size, jint image_mean,
-    jfloat image_std, jstring input_name, jstring output_name) {
-  g_num_runs = 0;
-  g_timing_total_us = 0;
-  g_frequency_start.Reset();
-  g_frequency_end.Reset();
+    JNIEnv* env, jobject thiz, jobject java_asset_manager, jstring model) {
+
 
   // MutexLock input_lock(&g_compute_graph_mutex);
   if (g_compute_graph_initialized) {
@@ -103,58 +99,44 @@ JNIEXPORT jint JNICALL TENSORFLOW_METHOD(initializeTensorflow)(
   const int64 start_time = CurrentThreadTimeUs();
 
   const char* const model_cstr = env->GetStringUTFChars(model, NULL);
-  const char* const labels_cstr = env->GetStringUTFChars(labels, NULL);
-
-  g_tensorflow_input_size = model_input_size;
-  g_image_mean = image_mean;
-  g_image_std = image_std;
-  g_input_name.reset(new std::string(env->GetStringUTFChars(input_name, NULL)));
-  g_output_name.reset(
-      new std::string(env->GetStringUTFChars(output_name, NULL)));
 
   LOG(INFO) << "Loading Tensorflow.";
-//
-//  LOG(INFO) << "Making new SessionOptions.";
-//  tensorflow::SessionOptions options;
-//  tensorflow::ConfigProto& config = options.config;
-//  LOG(INFO) << "Got config, " << config.device_count_size() << " devices";
-//
-//  session.reset(tensorflow::NewSession(options));
-//  LOG(INFO) << "Session created.";
-//
 
-//  tensorflow::GraphDef tensorflow_graph;
+  LOG(INFO) << "Making new SessionOptions.";
+  tensorflow::SessionOptions options;
+  tensorflow::ConfigProto& config = options.config;
+  LOG(INFO) << "Got config, " << config.device_count_size() << " devices";
 
-//  LOG(INFO) << "Graph created.";
-//
-//  AAssetManager* const asset_manager =
-//      AAssetManager_fromJava(env, java_asset_manager);
-//  LOG(INFO) << "Acquired AssetManager.";
-//
-//  LOG(INFO) << "Reading file to proto: " << model_cstr;
-//  ReadFileToProto(asset_manager, model_cstr, &tensorflow_graph);
-//
-//  g_stats.reset(new StatSummarizer(tensorflow_graph));
-//
-//  LOG(INFO) << "Creating session.";
-//  tensorflow::Status s = session->Create(tensorflow_graph);
-//  if (!s.ok()) {
-//    LOG(FATAL) << "Could not create Tensorflow Graph: " << s;
-//  }
-//
-//  // Clear the proto to save memory space.
-//  tensorflow_graph.Clear();
-//  LOG(INFO) << "Tensorflow graph loaded from: " << model_cstr;
-//
-//  // Read the label list
-//  ReadFileToVector(asset_manager, labels_cstr, &g_label_strings);
-//  LOG(INFO) << g_label_strings.size()
-//            << " label strings loaded from: " << labels_cstr;
-//  g_compute_graph_initialized = true;
-//
-//  const int64 end_time = CurrentThreadTimeUs();
-//  LOG(INFO) << "Initialization done in " << (end_time - start_time) / 1000
-//            << "ms";
+  session.reset(tensorflow::NewSession(options));
+  LOG(INFO) << "Session created.";
+
+
+  tensorflow::GraphDef tensorflow_graph;
+
+  LOG(INFO) << "Graph created.";
+
+  AAssetManager* const asset_manager =
+      AAssetManager_fromJava(env, java_asset_manager);
+  LOG(INFO) << "Acquired AssetManager.";
+
+  LOG(INFO) << "Reading file to proto: " << model_cstr;
+  ReadFileToProto(asset_manager, model_cstr, &tensorflow_graph);
+
+
+
+  LOG(INFO) << "Creating session.";
+  tensorflow::Status s = session->Create(tensorflow_graph);
+  if (!s.ok()) {
+    LOG(FATAL) << "Could not create Tensorflow Graph: " << s;
+  }
+
+  // Clear the proto to save memory space.
+  tensorflow_graph.Clear();
+  LOG(INFO) << "Tensorflow graph loaded from: " << model_cstr;
+
+
+  g_compute_graph_initialized = true;
+
 
   return 0;
 }
@@ -383,4 +365,63 @@ JNIEXPORT jstring JNICALL TENSORFLOW_METHOD(classifyImageBmp)(JNIEnv* env,
            ANDROID_BITMAP_RESULT_SUCCESS);
 
   return env->NewStringUTF(result.c_str());
+}
+
+
+
+JNIEXPORT jint JNICALL TENSORFLOW_METHOD(classifyImageMnist)(JNIEnv* env,
+                                                              jobject thiz,
+                                                              jbyteArray image) {
+  Tensor input_tensor(  tensorflow::DT_FLOAT,
+                        tensorflow::TensorShape( {1, IMAGE_SIZE}));
+
+  auto input_tensor_mapped = input_tensor.tensor<float, 2>();
+
+ // Copy image into currFrame.
+  jboolean iCopied = JNI_FALSE;
+  jbyte* pixels = env->GetByteArrayElements(image, &iCopied);
+  for(int i = 0; i < IMAGE_SIZE; i++){
+    input_tensor_mapped(0, i) = pixels[i];
+  }
+
+
+
+  std::vector<std::pair<std::string, tensorflow::Tensor> > input_tensors(
+      {{"input", input_tensor}});
+
+  LOG(INFO) << "Start computing.";
+
+  std::vector<tensorflow::Tensor> output_tensors;
+  std::vector<std::string> output_names({"output"});
+
+  tensorflow::Status s;
+
+  s = session->Run(input_tensors, output_names, {}, &output_tensors);
+
+  LOG(INFO) << "End computing.";
+
+
+    if (!s.ok()) {
+        LOG(ERROR) << "Error during inference: " << s;
+        return -1;
+    }
+
+    // Find best score digit
+    Tensor& output_tensor = output_tensors[0];
+    tensorflow::TTypes<float>::Flat output_flat = output_tensor.flat<float>();
+
+    float max_score = std::numeric_limits<float>::min();
+    int maxIndex = -1;
+
+    for(int i=0; i<10; ++i) {
+        const float score = output_flat(i);
+        if( score > max_score ) {
+            maxIndex = i;
+            max_score = score;
+        }
+
+        VLOG(0) <<  " (" << i << "): " << score;
+    }
+
+    return maxIndex;
 }

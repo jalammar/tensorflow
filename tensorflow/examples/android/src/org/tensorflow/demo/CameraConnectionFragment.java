@@ -47,10 +47,16 @@ import android.view.LayoutInflater;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
+import android.widget.ImageView;
 import android.view.ViewGroup;
+import android.widget.TextView;
 import android.widget.Toast;
+import java.io.File;
+import android.graphics.BitmapFactory;
+import android.graphics.Bitmap;
 
 import org.tensorflow.demo.env.Logger;
+import org.tensorflow.demo.UpdateResultInterface;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -60,7 +66,7 @@ import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
-public class CameraConnectionFragment extends Fragment {
+public class CameraConnectionFragment extends Fragment implements UpdateResultInterface {
   private static final Logger LOGGER = new Logger();
 
   /**
@@ -69,6 +75,8 @@ public class CameraConnectionFragment extends Fragment {
    */
   private static final int MINIMUM_PREVIEW_SIZE = 320;
 
+  private TextView resultTextView;
+  private ImageView previewImage;
   private RecognitionScoreView scoreView;
 
   /**
@@ -280,7 +288,10 @@ public class CameraConnectionFragment extends Fragment {
   @Override
   public void onViewCreated(final View view, final Bundle savedInstanceState) {
     textureView = (AutoFitTextureView) view.findViewById(R.id.texture);
-    scoreView = (RecognitionScoreView) view.findViewById(R.id.results);
+//    scoreView = (RecognitionScoreView) view.findViewById(R.id.results);
+    resultTextView = (TextView) view.findViewById(R.id.result);
+    previewImage = (ImageView) view.findViewById(R.id.preview_image);
+
   }
 
   @Override
@@ -538,7 +549,7 @@ public class CameraConnectionFragment extends Fragment {
 
     LOGGER.i("Getting assets.");
     tfPreviewListener.initialize(
-        getActivity().getAssets(), scoreView, inferenceHandler, sensorOrientation);
+        getActivity().getAssets(), resultTextView, inferenceHandler, sensorOrientation, this, getActivity());
     LOGGER.i("Tensorflow initialized.");
   }
 
@@ -616,6 +627,25 @@ public class CameraConnectionFragment extends Fragment {
                 }
               })
           .create();
+    }
+  }
+
+
+
+  public void updateResult(String result){
+    LOGGER.i("Updating resul: "+ result);
+    resultTextView.setText(result);
+  }
+
+  public void updateImage(String path){
+    File imgFile = new  File(path);
+
+    if(imgFile.exists()){
+
+      Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
+
+      previewImage.setImageBitmap(myBitmap);
+
     }
   }
 }

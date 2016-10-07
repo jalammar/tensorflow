@@ -27,11 +27,14 @@ import android.media.ImageReader.OnImageAvailableListener;
 import android.os.Handler;
 import android.os.Trace;
 import java.nio.Buffer;
+import android.widget.TextView;
+import android.app.Activity;
 
 import junit.framework.Assert;
 
 import org.tensorflow.demo.env.ImageUtils;
 import org.tensorflow.demo.env.Logger;
+import org.tensorflow.demo.UpdateResultInterface;
 
 import java.util.List;
 
@@ -57,7 +60,7 @@ public class TensorflowImageListener implements OnImageAvailableListener {
     private static final String OUTPUT_NAME = "output:0";
 
     //    private static final String MODEL_FILE = "file:///android_asset/tensorflow_inception_graph.pb";
-    private static final String MODEL_FILE = "file:///android_asset/mnist_graph.pb";
+    private static final String MODEL_FILE = "file:///android_asset/expert-graph.pb";
     private static final String LABEL_FILE =
             "file:///android_asset/imagenet_comp_graph_label_strings.txt";
 
@@ -77,20 +80,28 @@ public class TensorflowImageListener implements OnImageAvailableListener {
     private boolean computing = false;
     private Handler handler;
 
+    private TextView resultTextView;
     private RecognitionScoreView scoreView;
+
+    private UpdateResultInterface parentFragment;
+    private Activity parentActivity;
+    private String file_path;
 
     public void initialize(
             final AssetManager assetManager,
-            final RecognitionScoreView scoreView,
+            final TextView resultTextView,
             final Handler handler,
-            final Integer sensorOrientation) {
+            final Integer sensorOrientation,
+            final UpdateResultInterface parentFragment,
+            final Activity parentActivity) {
         Assert.assertNotNull(sensorOrientation);
         tensorflow.initializeTensorflow(
-                assetManager, MODEL_FILE, LABEL_FILE, NUM_CLASSES, INPUT_SIZE, IMAGE_MEAN, IMAGE_STD,
-                INPUT_NAME, OUTPUT_NAME);
-        this.scoreView = scoreView;
+                assetManager, MODEL_FILE);
+        this.resultTextView = resultTextView;
         this.handler = handler;
         this.sensorOrientation = sensorOrientation;
+        this.parentFragment = parentFragment;
+        this.parentActivity = parentActivity;
     }
 
     private void drawResizedBitmap(final Bitmap src, final Bitmap dst) {
@@ -254,24 +265,32 @@ public class TensorflowImageListener implements OnImageAvailableListener {
 
             // For examining the actual TF input.
             if (SAVE_PREVIEW_BITMAP) {
-                ImageUtils.saveBitmap(croppedBitmap);
+                file_path = ImageUtils.saveBitmap(croppedBitmap);
             }
-        computing = false;
+        //computing = false;
 
-//            handler.post(
-//                    new Runnable() {
-//                        @Override
-//                        public void run() {
-//                            final List<Classifier.Recognition> results = tensorflow.recognizeImage(croppedBitmap);
-//
-//                            LOGGER.v("%d results", results.size());
-//                            for (final Classifier.Recognition result : results) {
-//                                LOGGER.v("Result: " + result.getTitle());
-//                            }
-//                            scoreView.setResults(results);
-//                            computing = false;
-//                        }
-//                    });
+            handler.post(
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            final int result = tensorflow.classifyImageMnist(mnistPixelBytes);
+
+                            LOGGER.v("%d result", result);
+
+                            parentActivity.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+
+                                    parentFragment.updateResult("result: "+result);
+                                    parentFragment.updateImage(file_path);
+                                    //stuff that updates ui
+
+                                }
+                            });
+
+                            computing = false;
+                        }
+                    });
 //
 //            Trace.endSection();
 //        } catch (final Exception e) {

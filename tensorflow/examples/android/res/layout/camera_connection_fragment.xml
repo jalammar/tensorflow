@@ -22,11 +22,36 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignParentBottom="true" />
-    
-    <org.tensorflow.demo.RecognitionScoreView
-        android:id="@+id/results"
-        android:layout_width="match_parent"
-        android:layout_height="112dp"
-        android:layout_alignParentTop="true" />
+
+    <View
+            android:id="@+id/bottom_bar"
+            android:layout_width="match_parent"
+            android:layout_height="118dp"
+            android:background="#000000"
+            android:layout_alignParentTop="true" />
+
+
+    <RelativeLayout
+            android:id="@+id/bottom_bar"
+            android:layout_width="match_parent"
+            android:layout_height="118dp"
+            android:background="#000000"
+            android:layout_alignParentBottom="true" >
+
+        <TextView
+            android:id="@+id/result"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#ffffff"
+            android:text="Result"
+            android:layout_alignParentTop="true" />
+
+        <ImageView
+            android:id="@+id/preview_image"
+            android:layout_width="118dp"
+            android:layout_height="118dp"
+            android:layout_alignParentRight="true"/>
+
+    </RelativeLayout>
         
 </RelativeLayout>

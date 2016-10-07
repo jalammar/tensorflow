@@ -33,18 +33,14 @@ public class TensorflowClassifier implements Classifier {
   // jni native methods.
   public native int initializeTensorflow(
       AssetManager assetManager,
-      String model,
-      String labels,
-      int numClasses,
-      int inputSize,
-      int imageMean,
-      float imageStd,
-      String inputName,
-      String outputName);
+      String model);
+
 
   private native String classifyImageBmp(Bitmap bitmap);
 
   private native String classifyImageRgb(int[] output, int width, int height);
+
+  public native int classifyImageMnist(byte[] input);
 
   static {
     System.loadLibrary("tensorflow_demo");
