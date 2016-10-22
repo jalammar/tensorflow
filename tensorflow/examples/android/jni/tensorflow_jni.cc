@@ -392,7 +392,7 @@ JNIEXPORT jint JNICALL TENSORFLOW_METHOD(classifyImageMnist)(JNIEnv* env,
   LOG(INFO) << "Start computing.";
 
   std::vector<tensorflow::Tensor> output_tensors;
-  std::vector<std::string> output_names({"output"});
+  std::vector<std::string> output_names({"output_node"});
 
   tensorflow::Status s;
 

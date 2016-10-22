@@ -60,7 +60,8 @@ public class TensorflowImageListener implements OnImageAvailableListener {
     private static final String OUTPUT_NAME = "output:0";
 
     //    private static final String MODEL_FILE = "file:///android_asset/tensorflow_inception_graph.pb";
-    private static final String MODEL_FILE = "file:///android_asset/expert-graph.pb";
+    private static final String MODEL_FILE = "file:///android_asset/frozen_output_graph.pb";
+//    private static final String MODEL_FILE = "file:///android_asset/expert-graph.pb";
     private static final String LABEL_FILE =
             "file:///android_asset/imagenet_comp_graph_label_strings.txt";
 
@@ -282,6 +283,8 @@ public class TensorflowImageListener implements OnImageAvailableListener {
                                 public void run() {
 
                                     parentFragment.updateResult("result: "+result);
+
+                                    if(file_path != null)
                                     parentFragment.updateImage(file_path);
                                     //stuff that updates ui
 
