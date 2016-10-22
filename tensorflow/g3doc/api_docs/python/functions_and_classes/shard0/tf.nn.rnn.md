@@ -2,15 +2,16 @@
 
 Creates a recurrent neural network specified by RNNCell `cell`.
 
-##### The simplest form of RNN network generated is:
+The simplest form of RNN network generated is:
 
+```python
   state = cell.zero_state(...)
   outputs = []
   for input_ in inputs:
     output, state = cell(input_, state)
     outputs.append(output)
   return (outputs, state)
-
+```
 However, a few other options are available:
 
 An initial state can be provided.
@@ -20,21 +21,24 @@ sequence length of the minibatch (thus saving computational time),
 and properly propagates the state at an example's sequence length
 to the final state output.
 
-The dynamic calculation performed is, at time t for batch row b,
+The dynamic calculation performed is, at time `t` for batch row `b`,
+
+```python
   (output, state)(b, t) =
     (t >= sequence_length(b))
       ? (zeros(cell.output_size), states(b, sequence_length(b) - 1))
       : cell(input(b, t), state(b, t - 1))
+```
 
 ##### Args:
 
 
 *  <b>`cell`</b>: An instance of RNNCell.
-*  <b>`inputs`</b>: A length T list of inputs, each a tensor of shape
-    [batch_size, input_size], or a nested tuple of such elements.
+*  <b>`inputs`</b>: A length T list of inputs, each a `Tensor` of shape
+    `[batch_size, input_size]`, or a nested tuple of such elements.
 *  <b>`initial_state`</b>: (optional) An initial state for the RNN.
     If `cell.state_size` is an integer, this must be
-    a tensor of appropriate type and shape `[batch_size x cell.state_size]`.
+    a `Tensor` of appropriate type and shape `[batch_size, cell.state_size]`.
     If `cell.state_size` is a tuple, this should be a tuple of
     tensors having shapes `[batch_size, s] for s in cell.state_size`.
 *  <b>`dtype`</b>: (optional) The data type for the initial state and expected output.
@@ -47,9 +51,10 @@ The dynamic calculation performed is, at time t for batch row b,
 ##### Returns:
 
   A pair (outputs, state) where:
-    - outputs is a length T list of outputs (one for each input), or a nested
-      tuple of such elements.
-    - state is the final state
+
+  - outputs is a length T list of outputs (one for each input), or a nested
+    tuple of such elements.
+  - state is the final state
 
 ##### Raises:
 

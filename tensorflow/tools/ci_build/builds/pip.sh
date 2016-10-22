@@ -49,10 +49,11 @@
 # to run.
 #
 
-# Constants:
 # Fixed naming patterns for wheel (.whl) files given different python versions
-declare -A WHL_TAGS
-WHL_TAGS=(["2.7"]="cp27-none" ["3.4"]="cp34-cp34m" ["3.5"]="cp35-cp35m")
+if [[ $(uname) == "Linux" ]]; then
+  declare -A WHL_TAGS
+  WHL_TAGS=(["2.7"]="cp27-none" ["3.4"]="cp34-cp34m" ["3.5"]="cp35-cp35m")
+fi
 
 
 INSTALL_EXTRA_PIP_PACKAGES=${TF_BUILD_INSTALL_EXTRA_PIP_PACKAGES}
@@ -105,7 +106,8 @@ fi
 
 PIP_BUILD_TARGET="//tensorflow/tools/pip_package:build_pip_package"
 GPU_FLAG=""
-if [[ ${CONTAINER_TYPE} == "cpu" ]]; then
+if [[ ${CONTAINER_TYPE} == "cpu" ]] || \
+   [[ ${CONTAINER_TYPE} == "debian.jessie.cpu" ]]; then
   bazel build -c opt ${MAVX_FLAG} ${PIP_BUILD_TARGET} || \
       die "Build failed."
 elif [[ ${CONTAINER_TYPE} == "gpu" ]]; then
@@ -169,9 +171,11 @@ if [[ $(uname) == "Linux" ]]; then
     NEW_WHL_BASE_NAME=$(echo ${WHL_BASE_NAME} | cut -d \- -f 1)-\
 $(echo ${WHL_BASE_NAME} | cut -d \- -f 2)-${PY_TAGS}-${PLATFORM_TAG}.whl
 
-    cp "${WHL_DIR}/${WHL_BASE_NAME}" "${WHL_DIR}/${NEW_WHL_BASE_NAME}" && \
-      echo "Copied wheel file: ${WHL_BASE_NAME} --> ${NEW_WHL_BASE_NAME}" || \
-      die "ERROR: Failed to copy wheel file to ${NEW_WHL_BASE_NAME}"
+    if [[ ! -f "${WHL_DIR}/${NEW_WHL_BASE_NAME}" ]]; then
+      cp "${WHL_DIR}/${WHL_BASE_NAME}" "${WHL_DIR}/${NEW_WHL_BASE_NAME}" && \
+        echo "Copied wheel file: ${WHL_BASE_NAME} --> ${NEW_WHL_BASE_NAME}" || \
+        die "ERROR: Failed to copy wheel file to ${NEW_WHL_BASE_NAME}"
+    fi
   fi
 fi
 
@@ -210,7 +214,7 @@ source "${VENV_DIR}/bin/activate" || \
 
 # Force tensorflow reinstallation. Otherwise it may not get installed from
 # last build if it had the same version number as previous build.
-PIP_FLAGS="--upgrade --force-reinstall"
+PIP_FLAGS="--upgrade --force-reinstall --no-deps"
 pip install -v ${PIP_FLAGS} ${WHL_PATH} || \
     die "pip install (forcing to reinstall tensorflow) FAILED"
 echo "Successfully installed pip package ${WHL_PATH}"

@@ -1,4 +1,4 @@
-# Description: Tensorflow Serving session_bundle example.
+# Description: TensorFlow Serving session_bundle example.
 
 package(
     default_visibility = ["//tensorflow/contrib/session_bundle:__subpackages__"],
@@ -13,12 +13,12 @@ exports_files(["LICENSE"])
 filegroup(
     name = "all_files",
     srcs = glob(
-	["**/*"],
-	exclude = [
-	    "**/METADATA",
-	    "**/OWNERS",
-	    "g3doc/sitemap.md",
-	],
+        ["**/*"],
+        exclude = [
+            "**/METADATA",
+            "**/OWNERS",
+            "g3doc/sitemap.md",
+        ],
     ),
     visibility = ["//visibility:public"],
 )
@@ -26,27 +26,33 @@ filegroup(
 py_binary(
     name = "export_half_plus_two",
     srcs = [
-	"export_half_plus_two.py",
+        "export_half_plus_two.py",
     ],
     srcs_version = "PY2AND3",
     deps = [
-	"//tensorflow:tensorflow_py",
-	"//tensorflow/contrib/session_bundle:exporter",
+        "//tensorflow:tensorflow_py",
+        "//tensorflow/contrib/session_bundle:exporter",
     ],
 )
 
 genrule(
     name = "half_plus_two",
     outs = [
-	"half_plus_two/00000123/export.meta",
-	"half_plus_two/00000123/export-00000-of-00001",
+        "half_plus_two/00000123/export.meta",
+        "half_plus_two/00000123/export-00000-of-00001",
+        "half_plus_two_ckpt_v2/00000123/export.meta",
+        "half_plus_two_ckpt_v2/00000123/export.index",
+        "half_plus_two_ckpt_v2/00000123/export.data-00000-of-00001",
     ],
     cmd =
-	"rm -rf /tmp/half_plus_two; " +
-	"$(PYTHON_BIN_PATH) $(locations :export_half_plus_two); " +
-	"cp -r /tmp/half_plus_two/* $(@D)/half_plus_two",
+        "rm -rf /tmp/half_plus_two; " +
+        "$(PYTHON_BIN_PATH) $(locations :export_half_plus_two); " +
+        "cp -r /tmp/half_plus_two/* $(@D)/half_plus_two; " +
+        "rm -rf /tmp/half_plus_two_ckpt_v2; " +
+        "$(PYTHON_BIN_PATH) $(locations :export_half_plus_two)  --export_dir=/tmp/half_plus_two_ckpt_v2 --use_checkpoint_v2=true; " +
+        "cp -r /tmp/half_plus_two_ckpt_v2/* $(@D)/half_plus_two_ckpt_v2",
     tools = [
-	":export_half_plus_two",
+        ":export_half_plus_two",
     ],
     visibility = ["//visibility:public"],
 )

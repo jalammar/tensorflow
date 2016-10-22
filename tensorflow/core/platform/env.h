@@ -141,14 +141,61 @@ class Env {
   /// Original contents of *results are dropped.
   Status GetChildren(const string& dir, std::vector<string>* result);
 
+  /// \brief Returns true if the path matches the given pattern. The wildcards
+  /// allowed in pattern are described in FileSystem::GetMatchingPaths.
+  virtual bool MatchPath(const string& path, const string& pattern) = 0;
+
+  /// \brief Given a pattern, stores in *results the set of paths that matches
+  /// that pattern. *results is cleared.
+  ///
+  /// More details about `pattern` in FileSystem::GetMatchingPaths.
+  virtual Status GetMatchingPaths(const string& pattern,
+                                  std::vector<string>* results);
+
   /// Deletes the named file.
   Status DeleteFile(const string& fname);
 
-  /// Creates the specified directory.
+  /// \brief Deletes the specified directory and all subdirectories and files
+  /// underneath it. undeleted_files and undeleted_dirs stores the number of
+  /// files and directories that weren't deleted (unspecified if the return
+  /// status is not OK).
+  /// REQUIRES: undeleted_files, undeleted_dirs to be not null.
+  /// Typical return codes
+  ///  * OK - dirname exists and we were able to delete everything underneath.
+  ///  * NOT_FOUND - dirname doesn't exist
+  ///  * PERMISSION_DENIED - dirname or some descendant is not writable
+  ///  * UNIMPLEMENTED - Some underlying functions (like Delete) are not
+  ///                    implemented
+  Status DeleteRecursively(const string& dirname, int64* undeleted_files,
+                           int64* undeleted_dirs);
+
+  /// \brief Creates the specified directory and all the necessary
+  /// subdirectories. Typical return codes.
+  ///  * OK - successfully created the directory and sub directories, even if
+  ///         they were already created.
+  ///  * PERMISSION_DENIED - dirname or some subdirectory is not writable.
+  Status RecursivelyCreateDir(const string& dirname);
+
+  /// \brief Creates the specified directory. Typical return codes
+  ///  * OK - successfully created the directory.
+  ///  * ALREADY_EXISTS - directory already exists.
+  ///  * PERMISSION_DENIED - dirname is not writable.
   Status CreateDir(const string& dirname);
 
   /// Deletes the specified directory.
   Status DeleteDir(const string& dirname);
+
+  /// Obtains statistics for the given path.
+  Status Stat(const string& fname, FileStatistics* stat);
+
+  /// \brief Returns whether the given path is a directory or not.
+  /// Typical return codes (not guaranteed exhaustive):
+  ///  * OK - The path exists and is a directory.
+  ///  * FAILED_PRECONDITION - The path exists and is not a directory.
+  ///  * NOT_FOUND - The path entry does not exist.
+  ///  * PERMISSION_DENIED - Insufficient permissions.
+  ///  * UNIMPLEMENTED - The file factory doesn't support directories.
+  Status IsDirectory(const string& fname);
 
   /// Stores the size of `fname` in `*file_size`.
   Status GetFileSize(const string& fname, uint64* file_size);
@@ -214,12 +261,17 @@ class Env {
   virtual Status GetSymbolFromLibrary(void* handle, const char* symbol_name,
                                       void** symbol) = 0;
 
- private:
-  /// No copying allowed
-  Env(const Env&);
-  void operator=(const Env&);
+  // \brief build the name of dynamic library.
+  //
+  // "name" should be name of the library.
+  // "version" should be the version of the library or NULL
+  // returns the name that LoadLibrary() can use
+  virtual string FormatLibraryFileName(const string& name,
+      const string& version) = 0;
 
+ private:
   std::unique_ptr<FileSystemRegistry> file_system_registry_;
+  TF_DISALLOW_COPY_AND_ASSIGN(Env);
 };
 
 /// \brief An implementation of Env that forwards all calls to another Env.
@@ -249,6 +301,10 @@ class EnvWrapper : public Env {
     return target_->RegisterFileSystem(scheme, factory);
   }
 
+  bool MatchPath(const string& path, const string& pattern) override {
+    return target_->MatchPath(path, pattern);
+  }
+
   uint64 NowMicros() override { return target_->NowMicros(); }
   void SleepForMicroseconds(int64 micros) override {
     target_->SleepForMicroseconds(micros);
@@ -270,11 +326,15 @@ class EnvWrapper : public Env {
                               void** symbol) override {
     return target_->GetSymbolFromLibrary(handle, symbol_name, symbol);
   }
-
+  string FormatLibraryFileName(const string& name,
+                               const string& version) override {
+    return target_->FormatLibraryFileName(name, version);
+  }
  private:
   Env* target_;
 };
 
+/// Represents a thread used to run a Tensorflow function.
 class Thread {
  public:
   Thread() {}
@@ -283,9 +343,7 @@ class Thread {
   virtual ~Thread();
 
  private:
-  /// No copying allowed
-  Thread(const Thread&);
-  void operator=(const Thread&);
+  TF_DISALLOW_COPY_AND_ASSIGN(Thread);
 };
 
 /// \brief Options to configure a Thread.
@@ -307,10 +365,21 @@ Status ReadFileToString(Env* env, const string& fname, string* data);
 Status WriteStringToFile(Env* env, const string& fname,
                          const StringPiece& data);
 
+/// Write binary representation of "proto" to the named file.
+Status WriteBinaryProto(Env* env, const string& fname,
+                        const ::tensorflow::protobuf::MessageLite& proto);
+
 /// Reads contents of named file and parse as binary encoded proto data
 /// and store into `*proto`.
 Status ReadBinaryProto(Env* env, const string& fname,
                        ::tensorflow::protobuf::MessageLite* proto);
+
+/// Read contents of named file and parse as text encoded proto data
+/// and store into `*proto`.
+Status ReadTextProto(Env* env, const string& fname,
+                     ::tensorflow::protobuf::Message* proto);
+
+// START_SKIP_DOXYGEN
 
 namespace register_file_system {
 
@@ -323,6 +392,8 @@ struct Register {
 };
 
 }  // namespace register_file_system
+
+// END_SKIP_DOXYGEN
 
 }  // namespace tensorflow
 

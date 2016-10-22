@@ -48,7 +48,7 @@ namespace benchmark_model {
 Status InitializeSession(int num_threads, const string& graph,
                          std::unique_ptr<Session>* session,
                          std::unique_ptr<StatSummarizer>* stats) {
-  LOG(INFO) << "Loading Tensorflow.";
+  LOG(INFO) << "Loading TensorFlow.";
 
   tensorflow::SessionOptions options;
   tensorflow::ConfigProto& config = options.config;
@@ -61,7 +61,7 @@ Status InitializeSession(int num_threads, const string& graph,
   tensorflow::GraphDef tensorflow_graph;
   Status s = ReadBinaryProto(Env::Default(), graph, &tensorflow_graph);
   if (!s.ok()) {
-    LOG(ERROR) << "Could not create Tensorflow Graph: " << s;
+    LOG(ERROR) << "Could not create TensorFlow Graph: " << s;
     return s;
   }
 
@@ -69,7 +69,7 @@ Status InitializeSession(int num_threads, const string& graph,
 
   s = (*session)->Create(tensorflow_graph);
   if (!s.ok()) {
-    LOG(ERROR) << "Could not create Tensorflow Session: " << s;
+    LOG(ERROR) << "Could not create TensorFlow Session: " << s;
     return s;
   }
 
@@ -118,15 +118,16 @@ Status RunBenchmark(DataType input_data_type, TensorShape input_shape,
   s = session->Run(run_options, input_tensors, output_names, {},
                    &output_tensors, &run_metadata);
 
+  if (!s.ok()) {
+    LOG(ERROR) << "Error during inference: " << s;
+  }
+
   assert(run_metadata.has_step_stats());
 
   const StepStats& step_stats = run_metadata.step_stats();
 
   stats->ProcessStepStats(step_stats);
 
-  if (!s.ok()) {
-    LOG(ERROR) << "Error during inference: " << s;
-  }
   return s;
 }
 
@@ -170,29 +171,32 @@ int Main(int argc, char** argv) {
   int num_threads = -1;
   string benchmark_name = "";
   string output_prefix = "";
+  bool show_sizes = false;
 
-  const bool parse_result = ParseFlags(
-      &argc, argv, {
-                       Flag("graph", &graph),                          //
-                       Flag("input_layer", &input_layer),              //
-                       Flag("input_layer_shape", &input_layer_shape),  //
-                       Flag("input_layer_type", &input_layer_type),    //
-                       Flag("output_layer", &output_layer),            //
-                       Flag("num_runs", &num_runs),                    //
-                       Flag("run_delay", &run_delay),                  //
-                       Flag("num_threads", &num_threads),              //
-                       Flag("benchmark_name", &benchmark_name),        //
-                       Flag("output_prefix", &output_prefix),          //
-                   });
+  std::vector<Flag> flag_list = {
+      Flag("graph", &graph, "graph file name"),
+      Flag("input_layer", &input_layer, "input layer name"),
+      Flag("input_layer_shape", &input_layer_shape, "input layer shape"),
+      Flag("input_layer_type", &input_layer_type, "input layer type"),
+      Flag("output_layer", &output_layer, "output layer name"),
+      Flag("num_runs", &num_runs, "number of runs"),
+      Flag("run_delay", &run_delay, "delay between runs in seconds"),
+      Flag("num_threads", &num_threads, "number of threads"),
+      Flag("benchmark_name", &benchmark_name, "benchmark name"),
+      Flag("output_prefix", &output_prefix, "benchmark output prefix"),
+      Flag("show_sizes", &show_sizes, "whether to show sizes"),
+  };
+  string usage = Flags::Usage(argv[0], flag_list);
+  const bool parse_result = Flags::Parse(&argc, argv, flag_list);
 
   if (!parse_result) {
-    LOG(ERROR) << "Error parsing command-line flags.";
+    LOG(ERROR) << usage;
     return -1;
   }
 
   ::tensorflow::port::InitMain(argv[0], &argc, &argv);
   if (argc > 1) {
-    LOG(ERROR) << "Unknown argument " << argv[1];
+    LOG(ERROR) << "Unknown argument " << argv[1] << "\n" << usage;
     return -1;
   }
 
@@ -206,6 +210,7 @@ int Main(int argc, char** argv) {
   LOG(INFO) << "Num threads: [" << num_threads << "]";
   LOG(INFO) << "Benchmark name: [" << benchmark_name << "]";
   LOG(INFO) << "Output prefix: [" << output_prefix << "]";
+  LOG(INFO) << "Show sizes: [" << show_sizes << "]";
 
   std::unique_ptr<Session> session;
   std::unique_ptr<StatSummarizer> stats;
@@ -240,6 +245,10 @@ int Main(int argc, char** argv) {
   }
 
   stats->PrintStepStats();
+
+  if (show_sizes) {
+    stats->PrintOutputs();
+  }
 
   if (!benchmark_name.empty() && !output_prefix.empty()) {
     // Compute the total number of values per input.

@@ -25,18 +25,25 @@ def _setup_model():
   x = tf.placeholder(tf.float32, [])
   var = tf.get_variable("test", [], initializer=tf.constant_initializer(10))
   loss = tf.abs(var * x)
-  global_step = tf.get_variable("global_step",
-                                [],
-                                trainable=False,
-                                initializer=tf.constant_initializer(0))
+  global_step = tf.get_variable(
+      "global_step", [], trainable=False, dtype=tf.int64,
+      initializer=tf.constant_initializer(0, dtype=tf.int64))
   return x, var, loss, global_step
+
+
+def _no_op_learning_rate_decay_fn(lr, global_step):
+  assert lr is not None
+  assert global_step is not None
+  return lr
 
 
 class OptimizersTest(tf.test.TestCase):
 
   def testSGDOptimizer(self):
-    optimizers = ["SGD", tf.train.GradientDescentOptimizer,
-                  tf.train.GradientDescentOptimizer(learning_rate=0.1)]
+    optimizers = [
+        "SGD", tf.train.GradientDescentOptimizer,
+        tf.train.GradientDescentOptimizer(learning_rate=0.1),
+        lambda lr: tf.train.GradientDescentOptimizer(learning_rate=lr)]
     for optimizer in optimizers:
       with tf.Graph().as_default() as g:
         with self.test_session(graph=g) as session:
@@ -51,8 +58,24 @@ class OptimizersTest(tf.test.TestCase):
           self.assertEqual(var_value, 9.5)
           self.assertEqual(global_step_value, 1)
 
+  def testNoLrCallable(self):
+    def optimizer_fn():
+      return tf.train.GradientDescentOptimizer(learning_rate=0.1)
+    with tf.Graph().as_default() as g:
+      with self.test_session(graph=g) as session:
+        x, var, loss, global_step = _setup_model()
+        train = tf.contrib.layers.optimize_loss(loss,
+                                                global_step,
+                                                learning_rate=None,
+                                                optimizer=optimizer_fn)
+        tf.initialize_all_variables().run()
+        session.run(train, feed_dict={x: 5})
+        var_value, global_step_value = session.run([var, global_step])
+        self.assertEqual(var_value, 9.5)
+        self.assertEqual(global_step_value, 1)
+
   def testWrongOptimizer(self):
-    optimizers = ["blah", tf.Variable, object()]
+    optimizers = ["blah", tf.Variable, object(), lambda x: None]
     for optimizer in optimizers:
       with tf.Graph().as_default() as g:
         with self.test_session(graph=g):
@@ -62,6 +85,53 @@ class OptimizersTest(tf.test.TestCase):
                                             global_step,
                                             learning_rate=0.1,
                                             optimizer=optimizer)
+
+  def testInvalidLoss(self):
+    with tf.Graph().as_default() as g, self.test_session(graph=g):
+      _, _, _, global_step = _setup_model()
+      with self.assertRaises(ValueError):
+        tf.contrib.layers.optimize_loss(None,
+                                        global_step,
+                                        learning_rate=0.1,
+                                        optimizer="SGD")
+      with self.assertRaises(ValueError):
+        tf.contrib.layers.optimize_loss([[1.0]],
+                                        global_step,
+                                        learning_rate=0.1,
+                                        optimizer="SGD")
+
+  def testInvalidGlobalStep(self):
+    with tf.Graph().as_default() as g, self.test_session(graph=g):
+      x = tf.placeholder(tf.float32, [])
+      var = tf.get_variable("test", [], initializer=tf.constant_initializer(10))
+      loss = tf.abs(var * x)
+      with self.assertRaises(TypeError):
+        tf.contrib.layers.optimize_loss(
+            loss, global_step=tf.constant(43, dtype=tf.int64),
+            learning_rate=0.1, optimizer="SGD")
+      with self.assertRaises(TypeError):
+        tf.contrib.layers.optimize_loss(
+            loss,
+            global_step=tf.get_variable(
+                "global_step", [], trainable=False, dtype=tf.float64,
+                initializer=tf.constant_initializer(0.0, dtype=tf.float64)),
+            learning_rate=0.1, optimizer="SGD")
+      with self.assertRaises(ValueError):
+        tf.contrib.layers.optimize_loss(
+            loss,
+            global_step=tf.get_variable(
+                "global_step", [1], trainable=False, dtype=tf.int64,
+                initializer=tf.constant_initializer([0], dtype=tf.int64)),
+            learning_rate=0.1, optimizer="SGD")
+
+  def testInvalidLearningRate(self):
+    with tf.Graph().as_default() as g, self.test_session(graph=g):
+      _, _, loss, global_step = _setup_model()
+      with self.assertRaises(ValueError):
+        tf.contrib.layers.optimize_loss(loss,
+                                        global_step,
+                                        learning_rate=-0.1,
+                                        optimizer="SGD")
 
   def testGradientNoise(self):
     tf.set_random_seed(42)
@@ -75,7 +145,8 @@ class OptimizersTest(tf.test.TestCase):
       tf.initialize_all_variables().run()
       session.run(train, feed_dict={x: 5})
       var_value, global_step_value = session.run([var, global_step])
-      self.assertAlmostEqual(var_value, 8.58150, 4)
+      # Due to randomness the following number may change if graph is different.
+      self.assertAlmostEqual(var_value, 8.5591021, 4)
       self.assertEqual(global_step_value, 1)
 
   def testGradientNoiseWithClipping(self):
@@ -130,27 +201,136 @@ class OptimizersTest(tf.test.TestCase):
     unused_variable = tf.get_variable("ignore_me", [])
 
     tf.contrib.layers.optimize_loss(
-        loss, global_step, learning_rate=0.1, optimizer="SGD")
+        loss, global_step, learning_rate=0.1, optimizer="SGD",
+        gradient_noise_scale=10.0,
+        gradient_multipliers={unused_variable: 1.},
+        clip_gradients=10.0)
+
+  def testNoGlobalStep(self):
+    optimizers = ["SGD", tf.train.GradientDescentOptimizer,
+                  tf.train.GradientDescentOptimizer(learning_rate=0.1)]
+    for optimizer in optimizers:
+      with tf.Graph().as_default() as g, self.test_session(graph=g) as session:
+        x = tf.placeholder(tf.float32, [])
+        var = tf.get_variable(
+            "test", [], initializer=tf.constant_initializer(10))
+        loss = tf.abs(var * x)
+        update_var = tf.get_variable(
+            "update", [], initializer=tf.constant_initializer(10))
+        update_op = tf.assign(update_var, 20)
+        train = tf.contrib.layers.optimize_loss(loss,
+                                                global_step=None,
+                                                learning_rate=0.1,
+                                                optimizer=optimizer,
+                                                update_ops=[update_op])
+        tf.initialize_all_variables().run()
+        session.run(train, feed_dict={x: 5})
+        self.assertEqual(9.5, var.eval())
+        self.assertEqual(20, update_var.eval())
+
+  def testNoGlobalStepWithDecay(self):
+    optimizers = ["SGD", tf.train.GradientDescentOptimizer,
+                  tf.train.GradientDescentOptimizer(learning_rate=0.1)]
+    for optimizer in optimizers:
+      with tf.Graph().as_default() as g, self.test_session(graph=g):
+        x = tf.placeholder(tf.float32, [])
+        var = tf.get_variable(
+            "test", [], initializer=tf.constant_initializer(10))
+        loss = tf.abs(var * x)
+        update_var = tf.get_variable(
+            "update", [], initializer=tf.constant_initializer(10))
+        update_op = tf.assign(update_var, 20)
+        with self.assertRaisesRegexp(
+            ValueError, "global_step is required for learning_rate_decay_fn"):
+          tf.contrib.layers.optimize_loss(
+              loss,
+              global_step=None,
+              learning_rate=0.1,
+              learning_rate_decay_fn=_no_op_learning_rate_decay_fn,
+              optimizer=optimizer,
+              update_ops=[update_op])
+
+  def testNoGlobalStepArg(self):
+    optimizers = ["SGD", tf.train.GradientDescentOptimizer,
+                  tf.train.GradientDescentOptimizer(learning_rate=0.1)]
+    for optimizer in optimizers:
+      with tf.Graph().as_default() as g, self.test_session(graph=g) as session:
+        x, var, loss, global_step = _setup_model()
+        update_var = tf.get_variable(
+            "update", [], initializer=tf.constant_initializer(10))
+        update_op = tf.assign(update_var, 20)
+        train = tf.contrib.layers.optimize_loss(loss,
+                                                global_step=None,
+                                                learning_rate=0.1,
+                                                optimizer=optimizer,
+                                                update_ops=[update_op])
+        tf.initialize_all_variables().run()
+        session.run(train, feed_dict={x: 5})
+        self.assertEqual(9.5, var.eval())
+        self.assertEqual(20, update_var.eval())
+        self.assertEqual(1, global_step.eval())
 
   def testUpdateOp(self):
     optimizers = ["SGD", tf.train.GradientDescentOptimizer,
                   tf.train.GradientDescentOptimizer(learning_rate=0.1)]
     for optimizer in optimizers:
-      with tf.Graph().as_default() as g:
-        with self.test_session(graph=g) as session:
-          x, var, loss, global_step = _setup_model()
-          update_op = tf.assign(var, 20)
-          train = tf.contrib.layers.optimize_loss(loss,
-                                                  global_step,
-                                                  learning_rate=0.1,
-                                                  optimizer=optimizer,
-                                                  update_ops=[update_op])
-          tf.initialize_all_variables().run()
-          session.run(train, feed_dict={x: 5})
-          var_value, global_step_value = session.run([var, global_step])
-          # 19.5, due to update of var to 20 before loss computation.
-          self.assertEqual(var_value, 19.5)
-          self.assertEqual(global_step_value, 1)
+      with tf.Graph().as_default() as g, self.test_session(graph=g) as session:
+        x, var, loss, global_step = _setup_model()
+        update_var = tf.get_variable(
+            "update", [], initializer=tf.constant_initializer(10))
+        update_op = tf.assign(update_var, 20)
+        train = tf.contrib.layers.optimize_loss(loss,
+                                                global_step,
+                                                learning_rate=0.1,
+                                                optimizer=optimizer,
+                                                update_ops=[update_op])
+        tf.initialize_all_variables().run()
+        session.run(train, feed_dict={x: 5})
+        self.assertEqual(9.5, var.eval())
+        self.assertEqual(20, update_var.eval())
+        self.assertEqual(1, global_step.eval())
+
+  def testUpdateOpWithNoOpDecay(self):
+    optimizers = ["SGD", tf.train.GradientDescentOptimizer,
+                  tf.train.GradientDescentOptimizer(learning_rate=0.1)]
+    for optimizer in optimizers:
+      with tf.Graph().as_default() as g, self.test_session(graph=g) as session:
+        x, var, loss, global_step = _setup_model()
+        update_var = tf.get_variable(
+            "update", [], initializer=tf.constant_initializer(10))
+        update_op = tf.assign(update_var, 20)
+        train = tf.contrib.layers.optimize_loss(
+            loss,
+            global_step,
+            learning_rate=0.1,
+            learning_rate_decay_fn=_no_op_learning_rate_decay_fn,
+            optimizer=optimizer,
+            update_ops=[update_op])
+        tf.initialize_all_variables().run()
+        session.run(train, feed_dict={x: 5})
+        self.assertEqual(9.5, var.eval())
+        self.assertEqual(20, update_var.eval())
+        self.assertEqual(1, global_step.eval())
+
+  def testUpdateOpFromCollection(self):
+    optimizers = ["SGD", tf.train.GradientDescentOptimizer,
+                  tf.train.GradientDescentOptimizer(learning_rate=0.1)]
+    for optimizer in optimizers:
+      with tf.Graph().as_default() as g, self.test_session(graph=g) as session:
+        x, var, loss, global_step = _setup_model()
+        update_var = tf.get_variable(
+            "update", [], initializer=tf.constant_initializer(10))
+        update_op = tf.assign(update_var, 20)
+        tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_op)
+        train = tf.contrib.layers.optimize_loss(
+            loss, global_step, learning_rate=0.1, optimizer=optimizer)
+        tf.initialize_all_variables().run()
+        session.run(train, feed_dict={x: 5})
+        var_value, update_var_value, global_step_value = session.run(
+            [var, update_var, global_step])
+        self.assertEqual(var_value, 9.5)
+        self.assertEqual(update_var_value, 20)
+        self.assertEqual(global_step_value, 1)
 
 if __name__ == "__main__":
   tf.test.main()

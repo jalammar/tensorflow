@@ -46,17 +46,20 @@ class LRNOpTest(tf.test.TestCase):
     return output
 
   def _RunAndVerify(self, dtype):
-    with self.test_session():
+    with self.test_session(use_gpu=True):
       # random shape
       shape = np.random.randint(1, 16, size=4)
       # Make depth at least 2 to make it meaningful
       shape[3] += 1
       p = tf.placeholder(dtype, shape=shape)
-      # random depth_radius, bias, alpha, beta
-      lrn_depth_radius = np.random.randint(1, shape[3])
+      # random depth_radius, bias, alpha, beta. cuDNN requires depth_radius to
+      # be in [1, 7].
+      lrn_depth_radius = np.random.randint(1, min(8, shape[3]))
+
       bias = 1.0 + np.random.rand()
       alpha = 2.0 * np.random.rand()
-      beta = 2.0 * np.random.rand()
+      # cuDNN requires beta >= 0.01.
+      beta = 0.01 + 2.0 * np.random.rand()
       lrn_t = tf.nn.local_response_normalization(
           p, name="lrn", depth_radius=lrn_depth_radius, bias=bias,
           alpha=alpha, beta=beta)
@@ -76,10 +79,12 @@ class LRNOpTest(tf.test.TestCase):
   def testCompute(self):
     for _ in range(2):
       self._RunAndVerify(tf.float32)
-      self._RunAndVerify(tf.float16)
+      # Enable when LRN supports tf.float16 on GPU.
+      if not tf.test.is_gpu_available():
+        self._RunAndVerify(tf.float16)
 
   def testGradientsZeroInput(self):
-    with self.test_session():
+    with self.test_session(use_gpu=True):
       shape = [4, 4, 4, 4]
       p = tf.placeholder(tf.float32, shape=shape)
       inp_array = np.zeros(shape).astype("f")
@@ -93,16 +98,18 @@ class LRNOpTest(tf.test.TestCase):
     self.assertShapeEqual(expected, grad)
 
   def _RunAndVerifyGradients(self, dtype):
-    with self.test_session():
+    with self.test_session(use_gpu=True):
       # random shape
       shape = np.random.randint(1, 5, size=4)
       # Make depth at least 2 to make it meaningful
       shape[3] += 1
-      # random depth_radius, bias, alpha, beta
-      lrn_depth_radius = np.random.randint(1, shape[3])
+      # random depth_radius, bias, alpha, beta. cuDNN requires depth_radius to
+      # be in [1, 7].
+      lrn_depth_radius = np.random.randint(1, min(8, shape[3]))
       bias = 1.0 + np.random.rand()
       alpha = 1.0 * np.random.rand()
-      beta = 1.0 * np.random.rand()
+      # cuDNN requires beta >= 0.01.
+      beta = 0.01 + 1.0 * np.random.rand()
       if dtype == tf.float32:
         inp_array = np.random.rand(*shape).astype(np.float32)
       else:
@@ -126,7 +133,9 @@ class LRNOpTest(tf.test.TestCase):
   def testGradients(self):
     for _ in range(2):
       self._RunAndVerifyGradients(tf.float32)
-      self._RunAndVerifyGradients(tf.float16)
+      # Enable when LRN supports tf.float16 on GPU.
+      if not tf.test.is_gpu_available():
+        self._RunAndVerifyGradients(tf.float16)
 
 
 if __name__ == "__main__":

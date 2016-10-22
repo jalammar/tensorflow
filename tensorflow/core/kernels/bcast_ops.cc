@@ -58,6 +58,8 @@ class BCastGradArgsOp : public OpKernel {
     Output(ctx, 1, bcast.grad_y_reduce_idx());
   }
 
+  bool IsExpensive() override { return false; }
+
  private:
   void Output(OpKernelContext* ctx, int idx, const BCast::Vec& v) {
     const int64 len = v.size();
@@ -73,6 +75,7 @@ class BCastGradArgsOp : public OpKernel {
 
 REGISTER_KERNEL_BUILDER(Name("BroadcastGradientArgs")
                             .Device(DEVICE_CPU)
+                            .TypeConstraint<int32>("T")
                             .HostMemory("s0")
                             .HostMemory("s1")
                             .HostMemory("r0")
@@ -80,6 +83,7 @@ REGISTER_KERNEL_BUILDER(Name("BroadcastGradientArgs")
                         BCastGradArgsOp);
 REGISTER_KERNEL_BUILDER(Name("BroadcastGradientArgs")
                             .Device(DEVICE_GPU)
+                            .TypeConstraint<int32>("T")
                             .HostMemory("s0")
                             .HostMemory("s1")
                             .HostMemory("r0")

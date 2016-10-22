@@ -15,7 +15,6 @@ limitations under the License.
 
 #include "tensorflow/stream_executor/cuda/cuda_diagnostics.h"
 
-#include <dirent.h>
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -25,11 +24,14 @@ limitations under the License.
 #include <IOKit/kext/KextManager.h>
 #include <mach-o/dyld.h>
 #else
+#if !defined(PLATFORM_WINDOWS)
+#include <dirent.h>
 #include <link.h>
-#include <sys/stat.h>
 #include <sys/sysmacros.h>
-#endif
 #include <unistd.h>
+#endif
+#include <sys/stat.h>
+#endif
 #include <algorithm>
 #include <memory>
 #include <vector>
@@ -135,7 +137,7 @@ void Diagnostician::LogDiagnosticInformation() {
               << "(" << port::Hostname() << ")";
   }
   CFRelease(kext_infos);
-#else
+#elif !defined(PLATFORM_WINDOWS)
   if (access(kDriverVersionPath, F_OK) != 0) {
     LOG(INFO) << "kernel driver does not appear to be running on this host "
               << "(" << port::Hostname() << "): "
@@ -158,7 +160,7 @@ void Diagnostician::LogDiagnosticInformation() {
 
 /* static */ void Diagnostician::LogDriverVersionInformation() {
   LOG(INFO) << "hostname: " << port::Hostname();
-
+#ifndef PLATFORM_WINDOWS
   if (VLOG_IS_ON(1)) {
     const char *value = getenv("LD_LIBRARY_PATH");
     string library_path = value == nullptr ? "" : value;
@@ -180,17 +182,17 @@ void Diagnostician::LogDiagnosticInformation() {
       closedir(dir);
     }
   }
-
   port::StatusOr<DriverVersion> dso_version = FindDsoVersion();
   LOG(INFO) << "libcuda reported version is: "
             << DriverVersionStatusToString(dso_version);
 
   port::StatusOr<DriverVersion> kernel_version = FindKernelDriverVersion();
   LOG(INFO) << "kernel reported version is: "
-            << DriverVersionStatusToString(kernel_version);
+	  << DriverVersionStatusToString(kernel_version);
+#endif
 
   // OS X kernel driver does not report version accurately
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(PLATFORM_WINDOWS)
   if (kernel_version.ok() && dso_version.ok()) {
     WarnOnDsoKernelMismatch(dso_version, kernel_version);
   }
@@ -227,6 +229,7 @@ port::StatusOr<DriverVersion> Diagnostician::FindDsoVersion() {
       result = StringToDriverVersion(version);
     }
 #else
+#if !defined(PLATFORM_WINDOWS)
   // Callback used when iterating through DSOs. Looks for the driver-interfacing
   // DSO and yields its version number into the callback data, when found.
   auto iterate_phdr =
@@ -258,6 +261,7 @@ port::StatusOr<DriverVersion> Diagnostician::FindDsoVersion() {
   };
 
   dl_iterate_phdr(iterate_phdr, &result);
+#endif
 #endif
 
   return result;
@@ -314,8 +318,17 @@ port::StatusOr<DriverVersion> Diagnostician::FindKernelDriverVersion() {
   if (CFDictionaryGetValueIfPresent(kext_infos, kDriverKextIdentifier, (const void**)&cuda_driver_info)) {
     // NOTE: OSX CUDA driver does not currently store the same driver version
     // in kCFBundleVersionKey as is returned by cuDriverGetVersion
-    const char * version = CFStringGetCStringPtr((CFStringRef)CFDictionaryGetValue(cuda_driver_info, kCFBundleVersionKey), kCFStringEncodingUTF8);
     CFRelease(kext_infos);
+    const CFStringRef str = (CFStringRef)CFDictionaryGetValue(
+        cuda_driver_info, kCFBundleVersionKey);
+    const char *version = CFStringGetCStringPtr(str, kCFStringEncodingUTF8);
+
+    // version can be NULL in which case treat it as empty string
+    // see
+    // https://developer.apple.com/library/mac/documentation/CoreFoundation/Conceptual/CFStrings/Articles/AccessingContents.html#//apple_ref/doc/uid/20001184-100980-TPXREF112
+    if (version == NULL) {
+      return StringToDriverVersion("");
+    }
     return StringToDriverVersion(version);
   }
   CFRelease(kext_infos);

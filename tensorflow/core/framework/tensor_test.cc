@@ -29,6 +29,13 @@ class TensorTestHelper {
   static void set_shape(Tensor* t, const TensorShape& s) { t->set_shape(s); }
 };
 
+// To make TestCopies do the right thing.
+inline bool operator==(const ResourceHandle& a, const ResourceHandle& b) {
+  return a.device() == b.device() && a.container() == b.container() &&
+         a.name() == b.name() && a.hash_code() == b.hash_code() &&
+         a.maybe_type_name() == b.maybe_type_name();
+}
+
 TEST(TensorTest, Default) {
   Tensor t;
   EXPECT_EQ(t.dtype(), DT_FLOAT);
@@ -124,6 +131,8 @@ void TestCopies(const Tensor& t) {
     LOG(INFO) << "Move assignment";
     Tensor t2 = t;
     Tensor t3 = std::move(t2);
+    Tensor* t4 = &t3;
+    *t4 = std::move(t3);
     test::ExpectTensorEqual<T>(t, t3);
     EXPECT_TRUE(t3.IsInitialized());
     EXPECT_FALSE(t2.IsInitialized());
@@ -139,6 +148,14 @@ TEST(Tensor_Float, Simple) {
     }
   }
   TestCopies<float>(t);
+}
+
+TEST(Tensor_ResourceHandle, Simple) {
+  Tensor t(DT_RESOURCE, TensorShape({}));
+  ResourceHandle tmp;
+  tmp.set_name("a");
+  t.flat<ResourceHandle>()(0) = tmp;
+  TestCopies<ResourceHandle>(t);
 }
 
 TEST(Tensor_UInt16, Simple) {
@@ -331,6 +348,16 @@ TEST(Tensor_Float, Reshape) {
 }
 
 TEST(Tensor_Scalar, Basics) {
+  {
+    Tensor t(DT_BOOL, TensorShape({}));
+    EXPECT_EQ(1, t.NumElements());
+    auto Tt = t.scalar<bool>();
+    EXPECT_EQ(1, Tt.size());
+    EXPECT_EQ(0, Tt.rank());
+    EXPECT_FALSE(Tt());
+    t.scalar<bool>()() = true;
+    EXPECT_TRUE(Tt());
+  }
   {
     Tensor t(DT_FLOAT, TensorShape({}));
     EXPECT_EQ(1, t.NumElements());
@@ -772,7 +799,7 @@ TEST(Tensor, Slice_Basic) {
 
     // Take an unaligned slice.
     Tensor y = x.Slice(1, 13);
-#if EIGEN_ALIGN == 1
+#if EIGEN_MAX_ALIGN_BYTES > 0
     EXPECT_FALSE(y.IsAligned());
 #endif
     y.unaligned_flat<float>().setConstant(1.0);

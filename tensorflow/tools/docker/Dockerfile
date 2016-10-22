@@ -12,10 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config \
         python \
         python-dev \
-        python-numpy \
-        python-pip \
-        python-scipy \
         rsync \
+        software-properties-common \
         unzip \
         && \
     apt-get clean && \
@@ -29,10 +27,13 @@ RUN pip --no-cache-dir install \
         ipykernel \
         jupyter \
         matplotlib \
+        numpy \
+        scipy \
+        sklearn \
         && \
     python -m ipykernel.kernelspec
 
-ENV TENSORFLOW_VERSION 0.9.0
+ENV TENSORFLOW_VERSION 0.11.0rc1
 
 # --- DO NOT EDIT OR DELETE BETWEEN THE LINES --- #
 # These lines will be edited automatically by parameterized_docker_build.sh. #

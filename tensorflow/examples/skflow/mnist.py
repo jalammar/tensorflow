@@ -33,10 +33,10 @@ mnist = learn.datasets.load_dataset('mnist')
 ### Linear classifier.
 
 feature_columns = learn.infer_real_valued_columns_from_input(mnist.train.images)
-classifier = learn.TensorFlowLinearClassifier(
-    feature_columns=feature_columns, n_classes=10, batch_size=100, steps=1000,
-    learning_rate=0.01)
-classifier.fit(mnist.train.images, mnist.train.labels)
+classifier = learn.LinearClassifier(
+    feature_columns=feature_columns, n_classes=10)
+classifier.fit(mnist.train.images, mnist.train.labels, batch_size=100,
+               steps=1000)
 score = metrics.accuracy_score(
     mnist.test.labels, classifier.predict(mnist.test.images))
 print('Accuracy: {0:f}'.format(score))
@@ -67,8 +67,9 @@ def conv_model(X, y):
     # reshape tensor into a batch of vectors
     h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
   # densely connected layer with 1024 neurons.
-  h_fc1 = learn.ops.dnn(
-      h_pool2_flat, [1024], activation=tf.nn.relu, dropout=0.5)
+  h_fc1 = tf.contrib.layers.dropout(
+      tf.contrib.layers.legacy_fully_connected(
+          h_pool2_flat, 1024, weight_init=None, activation_fn=tf.nn.relu))
   return learn.models.logistic_regression(h_fc1, y)
 
 # Training and predicting.

@@ -192,6 +192,7 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
   TF_CHECK_OK(ConvertGraphDefToGraph(opts, graph, g));
 
   string device = use_gpu ? "gpu" : "cpu";
+  testing::UseRealTime();
   test::Benchmark(device, g, &options).Run(iters);
   testing::ItemsProcessed(num_ops * iters);
 }
@@ -557,6 +558,7 @@ static void BM_ConvFloatDepthwise(int iters, int batch, int rows, int cols,
   TF_CHECK_OK(ConvertGraphDefToGraph(opts, graph, g));
 
   string device = use_gpu ? "gpu" : "cpu";
+  testing::UseRealTime();
   test::Benchmark(device, g, &options).Run(iters);
   testing::ItemsProcessed(num_ops * iters);
 }
@@ -1047,7 +1049,7 @@ static void BM_MaxPoolBk(int iters, int batch_size, int rows, int cols,
                          int depth, int kernel_rows, int kernel_cols,
                          int stride, Padding padding, int num_threads,
                          bool use_gpu, const string& label) {
-  GraphDefBuilder b(GraphDefBuilder::kFailImmediately);
+  auto root = Scope::NewRootScope().ExitOnError();
 
   int64 out_height, out_width, pad_rows, pad_cols;
   TF_CHECK_OK(GetWindowedOutputSize(rows, kernel_rows, stride, padding,
@@ -1057,26 +1059,25 @@ static void BM_MaxPoolBk(int iters, int batch_size, int rows, int cols,
 
   Tensor input_data(DT_FLOAT, TensorShape({batch_size, rows, cols, depth}));
   input_data.flat<float>().setRandom();
-  Node* input_data_node = ops::Const(input_data, b.opts());
 
   Tensor output_data(DT_FLOAT,
                      TensorShape({batch_size, out_height, out_width, depth}));
   output_data.flat<float>().setRandom();
-  Node* output_data_node = ops::Const(output_data, b.opts());
 
   Tensor output_diff(DT_FLOAT,
                      TensorShape({batch_size, out_height, out_width, depth}));
   output_diff.flat<float>().setRandom();
-  Node* output_diff_node = ops::Const(output_diff, b.opts());
 
   CHECK_EQ(kernel_rows, kernel_cols);
-  ops::MaxPoolGrad(input_data_node, output_data_node, output_diff_node,
+  ops::MaxPoolGrad(root, input_data, output_data, output_diff,
                    {1, kernel_rows, kernel_cols, 1} /* ksize */,
                    {1, stride, stride, 1} /* stride */,
-                   padding == VALID ? "VALID" : "SAME", b.opts());
+                   padding == VALID ? "VALID" : "SAME");
+  TF_CHECK_OK(root.status());
   Graph* g = new Graph(OpRegistry::Global());
-  TF_CHECK_OK(b.ToGraph(g));
+  TF_CHECK_OK(root.ToGraph(g));
   string device = use_gpu ? "gpu" : "cpu";
+  testing::UseRealTime();
   test::Benchmark(device, g).Run(iters);
 
   testing::ItemsProcessed(batch_size * rows * cols * depth * iters);

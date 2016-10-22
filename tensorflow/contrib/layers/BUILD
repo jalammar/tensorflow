@@ -7,6 +7,7 @@ exports_files(["LICENSE"])
 
 package(default_visibility = ["//tensorflow:__subpackages__"])
 
+load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 load("//tensorflow:tensorflow.bzl", "tf_custom_op_library")
 load("//tensorflow:tensorflow.bzl", "tf_gen_op_libs")
 load("//tensorflow:tensorflow.bzl", "tf_gen_op_wrapper_py")
@@ -84,12 +85,11 @@ py_library(
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "layers_test",
     size = "small",
     srcs = ["python/layers/layers_test.py"],
-    srcs_version = "PY2AND3",
-    deps = [
+    additional_deps = [
         ":layers_py",
         "//tensorflow:tensorflow_py",
         "//tensorflow/python:framework_test_lib",
@@ -217,6 +217,19 @@ py_test(
     name = "embedding_ops_test",
     size = "small",
     srcs = ["python/layers/embedding_ops_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":layers_py",
+        "//tensorflow:tensorflow_py",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform_test",
+    ],
+)
+
+py_test(
+    name = "utils_test",
+    size = "small",
+    srcs = ["python/layers/utils_test.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":layers_py",

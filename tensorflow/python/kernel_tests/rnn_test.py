@@ -132,6 +132,15 @@ class RNNTest(tf.test.TestCase):
     self._seed = 23489
     np.random.seed(self._seed)
 
+  def testInvalidSequenceLengthShape(self):
+    cell = Plus1RNNCell()
+    inputs = [tf.placeholder(tf.float32, shape=(3, 4))]
+    with self.assertRaisesRegexp(ValueError, "must be a vector"):
+      tf.nn.rnn(cell, inputs, dtype=tf.float32, sequence_length=4)
+    with self.assertRaisesRegexp(ValueError, "must be a vector"):
+      tf.nn.dynamic_rnn(
+          cell, tf.pack(inputs), dtype=tf.float32, sequence_length=[[4]])
+
   def testRNN(self):
     cell = Plus1RNNCell()
     batch_size = 2
@@ -190,7 +199,7 @@ class RNNTest(tf.test.TestCase):
       for d_v in full_dropout_values[:-1]:  # Add 1.0 to dropped_out (all zeros)
         self.assertAllClose(d_v, np.ones_like(input_value))
 
-  def testDynamicCalculation(self):
+  def _testDynamicCalculation(self, use_gpu):
     cell = Plus1RNNCell()
     sequence_length = tf.placeholder(tf.int64)
     batch_size = 2
@@ -203,7 +212,7 @@ class RNNTest(tf.test.TestCase):
           cell, inputs, sequence_length=sequence_length, dtype=tf.float32)
     self.assertEqual(len(dynamic_outputs), len(inputs))
 
-    with self.test_session(use_gpu=False) as sess:
+    with self.test_session(use_gpu=use_gpu) as sess:
       input_value = np.random.randn(batch_size, input_size)
       dynamic_values = sess.run(dynamic_outputs,
                                 feed_dict={inputs[0]: input_value,
@@ -235,6 +244,44 @@ class RNNTest(tf.test.TestCase):
           np.vstack((
               1.0 * (1 + 1) * np.ones((input_size)),
               1.0 * (2 + 1) * np.ones((input_size)))))
+
+  def testDynamicCalculation(self):
+    self._testDynamicCalculation(True)
+    self._testDynamicCalculation(False)
+
+  def _testScope(self, factory, prefix="prefix", use_outer_scope=True):
+    with self.test_session(use_gpu=True, graph=tf.Graph()):
+      if use_outer_scope:
+        with tf.variable_scope(prefix) as scope:
+          factory(scope)
+      else:
+        factory(prefix)
+
+      # check that all the variables names starts
+      # with the proper scope.
+      tf.initialize_all_variables()
+      all_vars = tf.all_variables()
+      prefix = prefix or "RNN"
+      scope_vars = [v for v in all_vars if v.name.startswith(prefix + "/")]
+      tf.logging.info("RNN with scope: %s (%s)"
+                      % (prefix, "scope" if use_outer_scope else "str"))
+      for v in scope_vars:
+        tf.logging.info(v.name)
+      self.assertEqual(len(scope_vars), len(all_vars))
+
+  def testScope(self):
+    def factory(scope):
+      cell = Plus1RNNCell()
+      batch_size = 2
+      input_size = 5
+      max_length = 8  # unrolled up to this length
+      inputs = max_length * [
+          tf.placeholder(tf.float32, shape=(batch_size, input_size))]
+      return tf.nn.rnn(cell, inputs, dtype=tf.float32, scope=scope)
+
+    self._testScope(factory, use_outer_scope=True)
+    self._testScope(factory, use_outer_scope=False)
+    self._testScope(factory, prefix=None, use_outer_scope=False)
 
 
 class GRUTest(tf.test.TestCase):
@@ -275,6 +322,46 @@ class GRUTest(tf.test.TestCase):
     self._testDynamic(use_gpu=False)
     self._testDynamic(use_gpu=True)
 
+  def _testScope(self, factory, prefix="prefix", use_outer_scope=True):
+    with self.test_session(use_gpu=True, graph=tf.Graph()):
+      if use_outer_scope:
+        with tf.variable_scope(prefix) as scope:
+          factory(scope)
+      else:
+        factory(prefix)
+        tf.initialize_all_variables()
+
+      # check that all the variables names starts
+      # with the proper scope.
+      all_vars = tf.all_variables()
+      prefix = prefix or "RNN"
+      scope_vars = [v for v in all_vars if v.name.startswith(prefix + "/")]
+      tf.logging.info("RNN with scope: %s (%s)"
+                      % (prefix, "scope" if use_outer_scope else "str"))
+      for v in scope_vars:
+        tf.logging.info(v.name)
+      self.assertEqual(len(scope_vars), len(all_vars))
+
+  def testDynamicScope(self):
+    time_steps = 8
+    num_units = 3
+    input_size = 5
+    batch_size = 2
+    sequence_length = np.random.randint(0, time_steps, size=batch_size)
+
+    def factory(scope):
+      concat_inputs = tf.placeholder(
+          tf.float32, shape=(time_steps, batch_size, input_size))
+      cell = tf.nn.rnn_cell.GRUCell(num_units=num_units)
+      return tf.nn.dynamic_rnn(cell, inputs=concat_inputs,
+                               sequence_length=sequence_length,
+                               time_major=True, dtype=tf.float32,
+                               scope=scope)
+
+    self._testScope(factory, use_outer_scope=True)
+    self._testScope(factory, use_outer_scope=False)
+    self._testScope(factory, prefix=None, use_outer_scope=False)
+
 
 class LSTMTest(tf.test.TestCase):
 
@@ -289,7 +376,8 @@ class LSTMTest(tf.test.TestCase):
     max_length = 8
     with self.test_session(use_gpu=use_gpu, graph=tf.Graph()) as sess:
       initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=self._seed)
-      cell = tf.nn.rnn_cell.LSTMCell(num_units, initializer=initializer)
+      cell = tf.nn.rnn_cell.LSTMCell(num_units, initializer=initializer,
+                                     state_is_tuple=False)
       inputs = max_length * [
           tf.placeholder(tf.float32, shape=(batch_size, input_size))]
       outputs, _ = tf.nn.rnn(cell, inputs, dtype=tf.float32)
@@ -309,7 +397,8 @@ class LSTMTest(tf.test.TestCase):
     with self.test_session(use_gpu=use_gpu, graph=tf.Graph()) as sess:
       initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=self._seed)
       cell = tf.nn.rnn_cell.LSTMCell(
-          num_units, use_peepholes=True, cell_clip=0.0, initializer=initializer)
+          num_units, use_peepholes=True, cell_clip=0.0, initializer=initializer,
+          state_is_tuple=False)
       inputs = max_length * [
           tf.placeholder(tf.float32, shape=(batch_size, input_size))]
       outputs, _ = tf.nn.rnn(cell, inputs, dtype=tf.float32)
@@ -334,7 +423,8 @@ class LSTMTest(tf.test.TestCase):
       initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=self._seed)
       state_saver = TestStateSaver(batch_size, 2 * num_units)
       cell = tf.nn.rnn_cell.LSTMCell(
-          num_units, use_peepholes=False, initializer=initializer)
+          num_units, use_peepholes=False, initializer=initializer,
+          state_is_tuple=False)
       inputs = max_length * [
           tf.placeholder(tf.float32, shape=(batch_size, input_size))]
       with tf.variable_scope("share_scope"):
@@ -451,7 +541,8 @@ class LSTMTest(tf.test.TestCase):
           tf.placeholder(tf.float32, shape=(None, input_size))]
       cell = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          num_proj=num_proj, initializer=initializer)
+          num_proj=num_proj, initializer=initializer,
+          state_is_tuple=False)
       outputs, _ = tf.nn.rnn(cell, inputs, dtype=tf.float32)
       self.assertEqual(len(outputs), len(inputs))
 
@@ -472,7 +563,7 @@ class LSTMTest(tf.test.TestCase):
           tf.placeholder(tf.float32, shape=(None, input_size))]
       cell_notuple = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          num_proj=num_proj, initializer=initializer)
+          num_proj=num_proj, initializer=initializer, state_is_tuple=False)
       cell_tuple = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
           num_proj=num_proj, initializer=initializer, state_is_tuple=True)
@@ -522,7 +613,8 @@ class LSTMTest(tf.test.TestCase):
           num_proj=num_proj,
           num_unit_shards=num_unit_shards,
           num_proj_shards=num_proj_shards,
-          initializer=initializer)
+          initializer=initializer,
+          state_is_tuple=False)
 
       outputs, _ = tf.nn.rnn(cell, inputs, dtype=tf.float32)
 
@@ -551,7 +643,8 @@ class LSTMTest(tf.test.TestCase):
           num_proj=num_proj,
           num_unit_shards=num_unit_shards,
           num_proj_shards=num_proj_shards,
-          initializer=initializer)
+          initializer=initializer,
+          state_is_tuple=False)
 
       with self.assertRaises(ValueError):
         tf.nn.rnn(cell, inputs, dtype=tf.float32)
@@ -575,7 +668,8 @@ class LSTMTest(tf.test.TestCase):
           num_proj=num_proj,
           num_unit_shards=num_unit_shards,
           num_proj_shards=num_proj_shards,
-          initializer=initializer)
+          initializer=initializer,
+          state_is_tuple=False)
 
       outputs, _ = tf.nn.rnn(
           cell, inputs, initial_state=cell.zero_state(batch_size, tf.float64))
@@ -607,11 +701,13 @@ class LSTMTest(tf.test.TestCase):
           use_peepholes=True,
           initializer=initializer,
           num_unit_shards=num_unit_shards,
-          num_proj_shards=num_proj_shards)
+          num_proj_shards=num_proj_shards,
+          state_is_tuple=False)
 
       cell_shard = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          initializer=initializer, num_proj=num_proj)
+          initializer=initializer, num_proj=num_proj,
+          state_is_tuple=False)
 
       with tf.variable_scope("noshard_scope"):
         outputs_noshard, state_noshard = tf.nn.rnn(
@@ -660,7 +756,8 @@ class LSTMTest(tf.test.TestCase):
           num_proj=num_proj,
           num_unit_shards=num_unit_shards,
           num_proj_shards=num_proj_shards,
-          initializer=initializer)
+          initializer=initializer,
+          state_is_tuple=False)
       dropout_cell = tf.nn.rnn_cell.DropoutWrapper(cell, 0.5, seed=0)
 
       outputs, state = tf.nn.rnn(
@@ -692,10 +789,12 @@ class LSTMTest(tf.test.TestCase):
           tf.placeholder(tf.float32, shape=(None, input_size))]
       cell = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          num_proj=num_proj, initializer=initializer)
+          num_proj=num_proj, initializer=initializer,
+          state_is_tuple=False)
       cell_d = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          num_proj=num_proj, initializer=initializer_d)
+          num_proj=num_proj, initializer=initializer_d,
+          state_is_tuple=False)
 
       with tf.variable_scope("share_scope"):
         outputs0, _ = tf.nn.rnn(cell, inputs, dtype=tf.float32)
@@ -731,7 +830,8 @@ class LSTMTest(tf.test.TestCase):
           tf.placeholder(tf.float32, shape=(None, input_size))]
       cell = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          num_proj=num_proj, initializer=initializer)
+          num_proj=num_proj, initializer=initializer,
+          state_is_tuple=False)
 
       with tf.name_scope("scope0"):
         with tf.variable_scope("share_scope"):
@@ -749,6 +849,12 @@ class LSTMTest(tf.test.TestCase):
       self.assertEqual(len(outputs0_values), len(outputs1_values))
       for out0, out1 in zip(outputs0_values, outputs1_values):
         self.assertAllEqual(out0, out1)
+
+  def testDynamicRNNAllowsUnknownTimeDimension(self):
+    inputs = tf.placeholder(tf.float32, shape=[1, None, 20])
+    cell = tf.nn.rnn_cell.GRUCell(30)
+    # Smoke test, this should not raise an error
+    tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
 
   def testDynamicRNNWithTupleStates(self):
     num_units = 3
@@ -873,7 +979,7 @@ class LSTMTest(tf.test.TestCase):
 
       cell = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          initializer=initializer, num_proj=num_proj)
+          initializer=initializer, num_proj=num_proj, state_is_tuple=False)
 
       with tf.variable_scope("dynamic_scope"):
         outputs_static, state_static = tf.nn.rnn(
@@ -928,7 +1034,7 @@ class LSTMTest(tf.test.TestCase):
 
       cell = tf.nn.rnn_cell.LSTMCell(
           num_units, use_peepholes=True,
-          initializer=initializer, num_proj=num_proj)
+          initializer=initializer, num_proj=num_proj, state_is_tuple=False)
 
       with tf.variable_scope("dynamic_scope"):
         outputs_dynamic, state_dynamic = tf.nn.dynamic_rnn(
@@ -1053,7 +1159,11 @@ class BidirectionalRNNTest(tf.test.TestCase):
     self._seed = 23489
     np.random.seed(self._seed)
 
-  def _createBidirectionalRNN(self, use_gpu, use_shape, use_sequence_length):
+  def _createBidirectionalRNN(self,
+                              use_gpu,
+                              use_shape,
+                              use_sequence_length,
+                              scope=None):
     num_units = 3
     input_size = 5
     batch_size = 2
@@ -1063,10 +1173,12 @@ class BidirectionalRNNTest(tf.test.TestCase):
     sequence_length = tf.placeholder(tf.int64) if use_sequence_length else None
     cell_fw = tf.nn.rnn_cell.LSTMCell(num_units,
                                       input_size,
-                                      initializer=initializer)
+                                      initializer=initializer,
+                                      state_is_tuple=False)
     cell_bw = tf.nn.rnn_cell.LSTMCell(num_units,
                                       input_size,
-                                      initializer=initializer)
+                                      initializer=initializer,
+                                      state_is_tuple=False)
     inputs = max_length * [
         tf.placeholder(
             tf.float32,
@@ -1077,7 +1189,8 @@ class BidirectionalRNNTest(tf.test.TestCase):
         cell_bw,
         inputs,
         dtype=tf.float32,
-        sequence_length=sequence_length)
+        sequence_length=sequence_length,
+        scope=scope)
     self.assertEqual(len(outputs), len(inputs))
     for out in outputs:
       self.assertEqual(
@@ -1179,7 +1292,8 @@ class BidirectionalRNNTest(tf.test.TestCase):
                                                     use_shape=True)
 
   def _createBidirectionalDynamicRNN(self, use_gpu, use_shape,
-                                     use_state_tuple, use_time_major):
+                                     use_state_tuple, use_time_major,
+                                     scope=None):
     num_units = 3
     input_size = 5
     batch_size = 2
@@ -1205,7 +1319,8 @@ class BidirectionalRNNTest(tf.test.TestCase):
         inputs_c,
         sequence_length,
         dtype=tf.float32,
-        time_major=use_time_major)
+        time_major=use_time_major,
+        scope=scope)
     outputs = tf.concat(2, outputs)
     state_fw, state_bw = states
     outputs_shape = [None, max_length, 2 * num_units]
@@ -1285,6 +1400,54 @@ class BidirectionalRNNTest(tf.test.TestCase):
       self._testBidirectionalDynamicRNN(use_gpu=option[0], use_shape=option[1],
                                        use_state_tuple=option[2],
                                        use_time_major=option[3])
+
+  def _testScope(self, factory, prefix="prefix", use_outer_scope=True):
+    # REMARKS: factory(scope) is a function accepting a scope
+    #          as an argument, such scope can be None, a string
+    #          or a VariableScope instance.
+    with self.test_session(use_gpu=True, graph=tf.Graph()):
+      if use_outer_scope:
+        with tf.variable_scope(prefix) as scope:
+          factory(scope)
+      else:
+        factory(prefix)
+
+      # check that all the variables names starts
+      # with the proper scope.
+      tf.initialize_all_variables()
+      all_vars = tf.all_variables()
+      prefix = prefix or "BiRNN"
+      scope_vars = [v for v in all_vars if v.name.startswith(prefix + "/")]
+      tf.logging.info("BiRNN with scope: %s (%s)"
+                      % (prefix, "scope" if use_outer_scope else "str"))
+      for v in scope_vars:
+        tf.logging.info(v.name)
+      self.assertEqual(len(scope_vars), len(all_vars))
+
+  def testBidirectionalRNNScope(self):
+    def factory(scope):
+      return self._createBidirectionalRNN(
+          use_gpu=True, use_shape=True,
+          use_sequence_length=True, scope=scope)
+
+    self._testScope(factory, use_outer_scope=True)
+    self._testScope(factory, use_outer_scope=False)
+    self._testScope(factory, prefix=None, use_outer_scope=False)
+
+  def testBidirectionalDynamicRNNScope(self):
+    def get_factory(use_time_major):
+      def factory(scope):
+        return self._createBidirectionalDynamicRNN(
+            use_gpu=True, use_shape=True, use_state_tuple=True,
+            use_time_major=use_time_major, scope=scope)
+      return factory
+
+    self._testScope(get_factory(True), use_outer_scope=True)
+    self._testScope(get_factory(True), use_outer_scope=False)
+    self._testScope(get_factory(True), prefix=None, use_outer_scope=False)
+    self._testScope(get_factory(False), use_outer_scope=True)
+    self._testScope(get_factory(False), use_outer_scope=False)
+    self._testScope(get_factory(False), prefix=None, use_outer_scope=False)
 
 
 class MultiDimensionalLSTMTest(tf.test.TestCase):
@@ -1469,13 +1632,329 @@ class NestedLSTMTest(tf.test.TestCase):
           np.hstack(state_static_v), np.hstack(state_bid_bw_v))
 
 
+class RawRNNTest(tf.test.TestCase):
+
+  def setUp(self):
+    self._seed = 23489
+    np.random.seed(self._seed)
+
+  def _testRawRNN(self, max_time):
+    with self.test_session(graph=tf.Graph()) as sess:
+      batch_size = 16
+      input_depth = 4
+      num_units = 3
+
+      inputs = tf.placeholder(shape=(max_time, batch_size, input_depth),
+                              dtype=tf.float32)
+      sequence_length = tf.placeholder(shape=(batch_size,), dtype=tf.int32)
+      inputs_ta = tf.TensorArray(dtype=tf.float32, size=tf.shape(inputs)[0])
+      inputs_ta = inputs_ta.unpack(inputs)
+
+      cell = tf.nn.rnn_cell.LSTMCell(num_units, state_is_tuple=True)
+
+      def loop_fn(time_, cell_output, cell_state, unused_loop_state):
+        emit_output = cell_output  # == None for time == 0
+        if cell_output is None:  # time == 0
+          next_state = cell.zero_state(batch_size, tf.float32)
+        else:
+          next_state = cell_state  # copy state through
+        elements_finished = (time_ >= sequence_length)
+        finished = tf.reduce_all(elements_finished)
+        # For the very final iteration, we must emit a dummy input
+        next_input = tf.cond(
+            finished,
+            lambda: tf.zeros([batch_size, input_depth], dtype=tf.float32),
+            lambda: inputs_ta.read(time_))
+        return (elements_finished, next_input, next_state, emit_output, None)
+
+      outputs_ta, final_state, _ = tf.nn.raw_rnn(cell, loop_fn)
+      outputs = outputs_ta.pack()
+
+      tf.get_variable_scope().reuse_variables()
+      outputs_dynamic_rnn, final_state_dynamic_rnn = tf.nn.dynamic_rnn(
+          cell, inputs, time_major=True, dtype=tf.float32,
+          sequence_length=sequence_length)
+
+      variables = tf.trainable_variables()
+      gradients = tf.gradients([outputs, final_state], [inputs] + variables)
+      gradients_dynamic_rnn = tf.gradients(
+          [outputs_dynamic_rnn, final_state_dynamic_rnn], [inputs] + variables)
+
+      tf.initialize_all_variables().run()
+
+      rand_input = np.random.randn(max_time, batch_size, input_depth)
+      if max_time == 0:
+        rand_seq_len = np.zeros(batch_size)
+      else:
+        rand_seq_len = np.random.randint(max_time, size=batch_size)
+
+      # To ensure same output lengths for dynamic_rnn and raw_rnn
+      rand_seq_len[0] = max_time
+
+      (outputs_val, outputs_dynamic_rnn_val,
+       final_state_val, final_state_dynamic_rnn_val) = sess.run(
+           [outputs, outputs_dynamic_rnn, final_state, final_state_dynamic_rnn],
+           feed_dict={inputs: rand_input, sequence_length: rand_seq_len})
+
+      self.assertAllClose(outputs_dynamic_rnn_val, outputs_val)
+      self.assertAllClose(final_state_dynamic_rnn_val, final_state_val)
+
+      # NOTE: Because with 0 time steps, raw_rnn does not have shape
+      # information about the input, it is impossible to perform
+      # gradients comparisons as the gradients eval will fail.  So
+      # this case skips the gradients test.
+      if max_time > 0:
+        self.assertEqual(len(gradients), len(gradients_dynamic_rnn))
+        gradients_val = sess.run(
+            gradients,
+            feed_dict={inputs: rand_input, sequence_length: rand_seq_len})
+        gradients_dynamic_rnn_val = sess.run(
+            gradients_dynamic_rnn,
+            feed_dict={inputs: rand_input, sequence_length: rand_seq_len})
+        self.assertEqual(len(gradients_val), len(gradients_dynamic_rnn_val))
+        input_gradients_val = gradients_val[0]
+        input_gradients_dynamic_rnn_val = gradients_dynamic_rnn_val[0]
+        self.assertAllClose(
+            input_gradients_val, input_gradients_dynamic_rnn_val)
+        for i in range(1, len(gradients_val)):
+          self.assertAllClose(gradients_dynamic_rnn_val[i], gradients_val[i])
+
+  def testRawRNNZeroLength(self):
+    # NOTE: Because with 0 time steps, raw_rnn does not have shape
+    # information about the input, it is impossible to perform
+    # gradients comparisons as the gradients eval will fail.  So this
+    # case skips the gradients test.
+    self._testRawRNN(max_time=0)
+
+  def testRawRNN(self):
+    self._testRawRNN(max_time=10)
+
+  def testLoopState(self):
+    with self.test_session(graph=tf.Graph()):
+      max_time = 10
+      batch_size = 16
+      input_depth = 4
+      num_units = 3
+
+      inputs = np.random.randn(max_time, batch_size, input_depth)
+      inputs_ta = tf.TensorArray(dtype=tf.float32, size=tf.shape(inputs)[0])
+      inputs_ta = inputs_ta.unpack(inputs)
+
+      cell = tf.nn.rnn_cell.LSTMCell(num_units, state_is_tuple=True)
+
+      def loop_fn(time_, cell_output, cell_state, loop_state):
+        if cell_output is None:
+          loop_state = tf.constant([0])
+          next_state = cell.zero_state(batch_size, tf.float32)
+        else:
+          loop_state = tf.pack([tf.squeeze(loop_state) + 1])
+          next_state = cell_state
+        emit_output = cell_output  # == None for time == 0
+        elements_finished = tf.tile([time_ >= max_time], [batch_size])
+        finished = tf.reduce_all(elements_finished)
+        # For the very final iteration, we must emit a dummy input
+        next_input = tf.cond(
+            finished,
+            lambda: tf.zeros([batch_size, input_depth], dtype=tf.float32),
+            lambda: inputs_ta.read(time_))
+        return (elements_finished, next_input,
+                next_state, emit_output, loop_state)
+
+      r = tf.nn.raw_rnn(cell, loop_fn)
+      loop_state = r[-1]
+      self.assertEqual([10], loop_state.eval())
+
+  def testLoopStateWithTensorArray(self):
+    with self.test_session(graph=tf.Graph()):
+      max_time = 4
+      batch_size = 16
+      input_depth = 4
+      num_units = 3
+
+      inputs = np.random.randn(max_time, batch_size, input_depth)
+      inputs_ta = tf.TensorArray(dtype=tf.float32, size=tf.shape(inputs)[0])
+      inputs_ta = inputs_ta.unpack(inputs)
+
+      cell = tf.nn.rnn_cell.LSTMCell(num_units, state_is_tuple=True)
+      def loop_fn(time_, cell_output, cell_state, loop_state):
+        if cell_output is None:
+          loop_state = tf.TensorArray(
+              dynamic_size=True, size=0, dtype=tf.int32, clear_after_read=False)
+          loop_state = loop_state.write(0, 1)
+          next_state = cell.zero_state(batch_size, tf.float32)
+        else:
+          loop_state = loop_state.write(
+              time_, loop_state.read(time_ - 1) + time_)
+          next_state = cell_state
+        emit_output = cell_output  # == None for time == 0
+        elements_finished = tf.tile([time_ >= max_time], [batch_size])
+        finished = tf.reduce_all(elements_finished)
+        # For the very final iteration, we must emit a dummy input
+        next_input = tf.cond(
+            finished,
+            lambda: tf.zeros([batch_size, input_depth], dtype=tf.float32),
+            lambda: inputs_ta.read(time_))
+        return (elements_finished, next_input,
+                next_state, emit_output, loop_state)
+
+      r = tf.nn.raw_rnn(cell, loop_fn)
+      loop_state = r[-1]
+      loop_state = loop_state.pack()
+      self.assertAllEqual([1, 2, 2 + 2, 4 + 3, 7 + 4], loop_state.eval())
+
+  def testEmitDifferentStructureThanCellOutput(self):
+    with self.test_session(graph=tf.Graph()) as sess:
+      max_time = 10
+      batch_size = 16
+      input_depth = 4
+      num_units = 3
+
+      inputs = np.random.randn(max_time, batch_size, input_depth)
+      inputs_ta = tf.TensorArray(dtype=tf.float32, size=tf.shape(inputs)[0])
+      inputs_ta = inputs_ta.unpack(inputs)
+
+      cell = tf.nn.rnn_cell.LSTMCell(num_units, state_is_tuple=True)
+      def loop_fn(time_, cell_output, cell_state, _):
+        if cell_output is None:
+          emit_output = (tf.zeros([2, 3], dtype=tf.int32),
+                         tf.zeros([1], dtype=tf.int64))
+          next_state = cell.zero_state(batch_size, tf.float32)
+        else:
+          emit_output = (tf.ones([batch_size, 2, 3], dtype=tf.int32),
+                         tf.ones([batch_size, 1], dtype=tf.int64))
+          next_state = cell_state
+        elements_finished = tf.tile([time_ >= max_time], [batch_size])
+        finished = tf.reduce_all(elements_finished)
+        # For the very final iteration, we must emit a dummy input
+        next_input = tf.cond(
+            finished,
+            lambda: tf.zeros([batch_size, input_depth], dtype=tf.float32),
+            lambda: inputs_ta.read(time_))
+        return (elements_finished, next_input, next_state, emit_output, None)
+
+      r = tf.nn.raw_rnn(cell, loop_fn)
+      output_ta = r[0]
+      self.assertEqual(2, len(output_ta))
+      self.assertEqual([tf.int32, tf.int64], [ta.dtype for ta in output_ta])
+      output = [ta.pack() for ta in output_ta]
+      output_vals = sess.run(output)
+      self.assertAllEqual(
+          np.ones((max_time, batch_size, 2, 3), np.int32), output_vals[0])
+      self.assertAllEqual(
+          np.ones((max_time, batch_size, 1), np.int64), output_vals[1])
+
+  def _testScope(self, factory, prefix="prefix", use_outer_scope=True):
+    with self.test_session(use_gpu=True, graph=tf.Graph()):
+      if use_outer_scope:
+        with tf.variable_scope(prefix) as scope:
+          factory(scope)
+      else:
+        factory(prefix)
+        tf.initialize_all_variables()
+
+      # check that all the variables names starts
+      # with the proper scope.
+      all_vars = tf.all_variables()
+      prefix = prefix or "RNN"
+      scope_vars = [v for v in all_vars if v.name.startswith(prefix + "/")]
+      tf.logging.info("RNN with scope: %s (%s)"
+                      % (prefix, "scope" if use_outer_scope else "str"))
+      for v in scope_vars:
+        tf.logging.info(v.name)
+      self.assertEqual(len(scope_vars), len(all_vars))
+
+  def testRawRNNScope(self):
+    max_time = 10
+    batch_size = 16
+    input_depth = 4
+    num_units = 3
+
+    def factory(scope):
+      inputs = tf.placeholder(shape=(max_time, batch_size, input_depth),
+                              dtype=tf.float32)
+      sequence_length = tf.placeholder(shape=(batch_size,), dtype=tf.int32)
+      inputs_ta = tf.TensorArray(dtype=tf.float32, size=tf.shape(inputs)[0])
+      inputs_ta = inputs_ta.unpack(inputs)
+
+      cell = tf.nn.rnn_cell.LSTMCell(num_units, state_is_tuple=True)
+      def loop_fn(time_, cell_output, cell_state, unused_loop_state):
+        emit_output = cell_output  # == None for time == 0
+        if cell_output is None:  # time == 0
+          next_state = cell.zero_state(batch_size, tf.float32)
+        else:
+          next_state = cell_state
+
+        elements_finished = (time_ >= sequence_length)
+        finished = tf.reduce_all(elements_finished)
+        # For the very final iteration, we must emit a dummy input
+        next_input = tf.cond(
+            finished,
+            lambda: tf.zeros([batch_size, input_depth], dtype=tf.float32),
+            lambda: inputs_ta.read(time_))
+        return (elements_finished, next_input, next_state, emit_output, None)
+
+      return tf.nn.raw_rnn(cell, loop_fn, scope=scope)
+
+    self._testScope(factory, use_outer_scope=True)
+    self._testScope(factory, use_outer_scope=False)
+    self._testScope(factory, prefix=None, use_outer_scope=False)
+
+
+class StateSaverRNNTest(tf.test.TestCase):
+
+  def setUp(self):
+    self._seed = 23489
+    np.random.seed(self._seed)
+
+  def _testScope(self, factory, prefix="prefix", use_outer_scope=True):
+    with self.test_session(use_gpu=True, graph=tf.Graph()):
+      if use_outer_scope:
+        with tf.variable_scope(prefix) as scope:
+          factory(scope)
+      else:
+        factory(prefix)
+        tf.initialize_all_variables()
+
+      # check that all the variables names starts
+      # with the proper scope.
+      all_vars = tf.all_variables()
+      prefix = prefix or "RNN"
+      scope_vars = [v for v in all_vars if v.name.startswith(prefix + "/")]
+      tf.logging.info("RNN with scope: %s (%s)"
+                      % (prefix, "scope" if use_outer_scope else "str"))
+      for v in scope_vars:
+        tf.logging.info(v.name)
+      self.assertEqual(len(scope_vars), len(all_vars))
+
+  def testStateSaverRNNScope(self):
+    num_units = 3
+    input_size = 5
+    batch_size = 2
+    max_length = 8
+    def factory(scope):
+      initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=self._seed)
+      state_saver = TestStateSaver(batch_size, 2 * num_units)
+      cell = tf.nn.rnn_cell.LSTMCell(
+          num_units, use_peepholes=False, initializer=initializer,
+          state_is_tuple=False)
+      inputs = max_length * [
+          tf.placeholder(tf.float32, shape=(batch_size, input_size))]
+      return tf.nn.state_saving_rnn(
+          cell, inputs, state_saver=state_saver,
+          state_name="save_lstm", scope=scope)
+
+    self._testScope(factory, use_outer_scope=True)
+    self._testScope(factory, use_outer_scope=False)
+    self._testScope(factory, prefix=None, use_outer_scope=False)
+
 ######### Benchmarking RNN code
 
 def _static_vs_dynamic_rnn_benchmark_static(inputs_list_t, sequence_length):
   (_, input_size) = inputs_list_t[0].get_shape().as_list()
   initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=127)
   cell = tf.nn.rnn_cell.LSTMCell(
-      num_units=input_size, use_peepholes=True, initializer=initializer)
+      num_units=input_size, use_peepholes=True, initializer=initializer,
+      state_is_tuple=False)
   outputs, final_state = tf.nn.rnn(
       cell, inputs_list_t, sequence_length=sequence_length, dtype=tf.float32)
 
@@ -1489,7 +1968,8 @@ def _static_vs_dynamic_rnn_benchmark_dynamic(inputs_t, sequence_length):
   (unused_0, unused_1, input_size) = inputs_t.get_shape().as_list()
   initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=127)
   cell = tf.nn.rnn_cell.LSTMCell(
-      num_units=input_size, use_peepholes=True, initializer=initializer)
+      num_units=input_size, use_peepholes=True, initializer=initializer,
+      state_is_tuple=False)
   outputs, final_state = tf.nn.dynamic_rnn(
       cell, inputs_t, sequence_length=sequence_length, dtype=tf.float32)
 
@@ -1592,7 +2072,8 @@ def _half_seq_len_vs_unroll_half_rnn_benchmark(inputs_list_t, sequence_length):
   (_, input_size) = inputs_list_t[0].get_shape().as_list()
   initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=127)
   cell = tf.nn.rnn_cell.LSTMCell(
-      num_units=input_size, use_peepholes=True, initializer=initializer)
+      num_units=input_size, use_peepholes=True, initializer=initializer,
+      state_is_tuple=False)
   outputs, final_state = tf.nn.rnn(
       cell, inputs_list_t, sequence_length=sequence_length, dtype=tf.float32)
 
@@ -1701,7 +2182,8 @@ def _dynamic_rnn_swap_memory_benchmark(inputs_t, sequence_length,
   (unused_0, unused_1, input_size) = inputs_t.get_shape().as_list()
   initializer = tf.random_uniform_initializer(-0.01, 0.01, seed=127)
   cell = tf.nn.rnn_cell.LSTMCell(
-      num_units=input_size, use_peepholes=True, initializer=initializer)
+      num_units=input_size, use_peepholes=True, initializer=initializer,
+      state_is_tuple=False)
   outputs, final_state = tf.nn.dynamic_rnn(
       cell, inputs_t, sequence_length=sequence_length,
       swap_memory=swap_memory, dtype=tf.float32)

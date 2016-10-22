@@ -16,9 +16,21 @@
 # Builds the TensorFlow core library with ARM and x86 architectures for iOS, and
 # packs them into a fat file.
 
+function less_than_required_version() {
+  echo $1 | (IFS=. read major minor micro
+    if [ $major -ne $2 ]; then
+      [ $major -lt $2 ]
+    elif [ $minor -ne $3 ]; then
+      [ $minor -lt $3 ]
+    else
+      [ ${micro:-0} -lt $4 ]
+    fi
+  )
+}
+
 ACTUAL_XCODE_VERSION=`xcodebuild -version | head -n 1 | sed 's/Xcode //'`
 REQUIRED_XCODE_VERSION=7.3.0
-if [ ${ACTUAL_XCODE_VERSION//.} -lt ${REQUIRED_XCODE_VERSION//.} ]
+if less_than_required_version $ACTUAL_XCODE_VERSION 7 3 0
 then
     echo "error: Xcode ${REQUIRED_XCODE_VERSION} or later is required."
     exit 1
@@ -28,19 +40,6 @@ GENDIR=tensorflow/contrib/makefile/gen/
 LIBDIR=${GENDIR}lib
 LIB_PREFIX=libtensorflow-core
 
-# TODO(petewarden) - Some new code in Eigen triggers a clang bug, so work
-# around it by patching the source.
-sed -e 's#static uint32x4_t p4ui_CONJ_XOR = vld1q_u32( conj_XOR_DATA );#static uint32x4_t p4ui_CONJ_XOR; // = vld1q_u32( conj_XOR_DATA ); - Removed by script#' \
--i '' \
-tensorflow/contrib/makefile/downloads/eigen-latest/eigen/src/Core/arch/NEON/Complex.h
-sed -e 's#static uint32x2_t p2ui_CONJ_XOR = vld1_u32( conj_XOR_DATA );#static uint32x2_t p2ui_CONJ_XOR;// = vld1_u32( conj_XOR_DATA ); - Removed by scripts#' \
--i '' \
-tensorflow/contrib/makefile/downloads/eigen-latest/eigen/src/Core/arch/NEON/Complex.h
-sed -e 's#static uint64x2_t p2ul_CONJ_XOR = vld1q_u64( p2ul_conj_XOR_DATA );#static uint64x2_t p2ul_CONJ_XOR;// = vld1q_u64( p2ul_conj_XOR_DATA ); - Removed by script#' \
--i '' \
-tensorflow/contrib/makefile/downloads/eigen-latest/eigen/src/Core/arch/NEON/Complex.h
-
-make -f tensorflow/contrib/makefile/Makefile cleantarget
 make -f tensorflow/contrib/makefile/Makefile \
 TARGET=IOS IOS_ARCH=ARMV7 LIB_NAME=${LIB_PREFIX}-armv7.a OPTFLAGS="$1" $2 $3
 if [ $? -ne 0 ]
@@ -49,7 +48,6 @@ then
   exit 1
 fi
 
-make -f tensorflow/contrib/makefile/Makefile cleantarget
 make -f tensorflow/contrib/makefile/Makefile \
 TARGET=IOS IOS_ARCH=ARMV7S LIB_NAME=${LIB_PREFIX}-armv7s.a OPTFLAGS="$1" $2 $3
 if [ $? -ne 0 ]
@@ -58,7 +56,6 @@ then
   exit 1
 fi
 
-make -f tensorflow/contrib/makefile/Makefile cleantarget
 make -f tensorflow/contrib/makefile/Makefile \
 TARGET=IOS IOS_ARCH=ARM64 LIB_NAME=${LIB_PREFIX}-arm64.a OPTFLAGS="$1" $2 $3
 if [ $? -ne 0 ]
@@ -67,7 +64,6 @@ then
   exit 1
 fi
 
-make -f tensorflow/contrib/makefile/Makefile cleantarget
 make -f tensorflow/contrib/makefile/Makefile \
 TARGET=IOS IOS_ARCH=I386 LIB_NAME=${LIB_PREFIX}-i386.a OPTFLAGS="$1" $2 $3
 if [ $? -ne 0 ]
@@ -76,7 +72,6 @@ then
   exit 1
 fi
 
-make -f tensorflow/contrib/makefile/Makefile cleantarget
 make -f tensorflow/contrib/makefile/Makefile \
 TARGET=IOS IOS_ARCH=X86_64 LIB_NAME=${LIB_PREFIX}-x86_64.a OPTFLAGS="$1" $2 $3
 if [ $? -ne 0 ]
@@ -86,10 +81,10 @@ then
 fi
 
 lipo \
-${LIBDIR}/${LIB_PREFIX}-armv7.a \
-${LIBDIR}/${LIB_PREFIX}-armv7s.a \
-${LIBDIR}/${LIB_PREFIX}-arm64.a \
-${LIBDIR}/${LIB_PREFIX}-i386.a \
-${LIBDIR}/${LIB_PREFIX}-x86_64.a \
+${LIBDIR}/ios_ARMV7/${LIB_PREFIX}-armv7.a \
+${LIBDIR}/ios_ARMV7S/${LIB_PREFIX}-armv7s.a \
+${LIBDIR}/ios_ARM64/${LIB_PREFIX}-arm64.a \
+${LIBDIR}/ios_I386/${LIB_PREFIX}-i386.a \
+${LIBDIR}/ios_X86_64/${LIB_PREFIX}-x86_64.a \
 -create \
 -output ${LIBDIR}/${LIB_PREFIX}.a

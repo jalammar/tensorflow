@@ -1,0 +1,398 @@
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+==============================================================================*/
+
+package org.tensorflow.demo;
+
+import android.content.res.AssetManager;
+import android.graphics.Bitmap;
+import android.graphics.Bitmap.Config;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.media.Image;
+import android.media.Image.Plane;
+import android.media.ImageReader;
+import android.media.ImageReader.OnImageAvailableListener;
+import android.os.Handler;
+import android.os.Trace;
+import java.nio.Buffer;
+import android.widget.TextView;
+import android.app.Activity;
+
+import java.io.IOException;
+import java.util.List;
+import junit.framework.Assert;
+import org.tensorflow.demo.env.ImageUtils;
+import org.tensorflow.demo.env.Logger;
+import org.tensorflow.demo.UpdateResultInterface;
+
+/**
+ * Class that takes in preview frames and converts the image to Bitmaps to process with Tensorflow.
+ */
+<<<<<<< HEAD:tensorflow/examples/android/src/org/tensorflow/demo/TensorflowImageListener.java
+public class TensorflowImageListener implements OnImageAvailableListener {
+    private static final Logger LOGGER = new Logger();
+
+    private static final boolean SAVE_PREVIEW_BITMAP = true;
+
+    // These are the settings for the original v1 Inception model. If you want to
+    // use a model that's been produced from the TensorFlow for Poets codelab,
+    // you'll need to set IMAGE_SIZE = 299, IMAGE_MEAN = 128, IMAGE_STD = 128,
+    // INPUT_NAME = "Mul:0", and OUTPUT_NAME = "final_result:0".
+    // You'll also need to update the MODEL_FILE and LABEL_FILE paths to point to
+    // the ones you produced.
+    private static final int NUM_CLASSES = 10;
+    private static final int INPUT_SIZE = 28; // MNIST images are 28 x 28 pixels
+    private static final int IMAGE_MEAN = 117;
+    private static final float IMAGE_STD = 1;
+    private static final String INPUT_NAME = "input:0";
+    private static final String OUTPUT_NAME = "output:0";
+
+    //    private static final String MODEL_FILE = "file:///android_asset/tensorflow_inception_graph.pb";
+    private static final String MODEL_FILE = "file:///android_asset/frozen_output_graph.pb";
+//    private static final String MODEL_FILE = "file:///android_asset/expert-graph.pb";
+    private static final String LABEL_FILE =
+            "file:///android_asset/imagenet_comp_graph_label_strings.txt";
+
+    private Integer sensorOrientation;
+
+    private final TensorflowClassifier tensorflow = new TensorflowClassifier();
+
+    private int previewWidth = 0;
+    private int previewHeight = 0;
+    private byte[][] yuvBytes;
+    private int[] rgbBytes = null;
+    private int[] croppedRgbBytes = null;
+    private byte[] mnistPixelBytes = null;
+    private Bitmap rgbFrameBitmap = null;
+    private Bitmap croppedBitmap = null;
+
+    private boolean computing = false;
+    private Handler handler;
+
+    private TextView resultTextView;
+    private RecognitionScoreView scoreView;
+
+    private UpdateResultInterface parentFragment;
+    private Activity parentActivity;
+    private String file_path;
+
+    public void initialize(
+            final AssetManager assetManager,
+            final TextView resultTextView,
+            final Handler handler,
+            final Integer sensorOrientation,
+            final UpdateResultInterface parentFragment,
+            final Activity parentActivity) {
+        Assert.assertNotNull(sensorOrientation);
+        tensorflow.initializeTensorflow(
+                assetManager, MODEL_FILE);
+        this.resultTextView = resultTextView;
+        this.handler = handler;
+        this.sensorOrientation = sensorOrientation;
+        this.parentFragment = parentFragment;
+        this.parentActivity = parentActivity;
+=======
+public class TensorFlowImageListener implements OnImageAvailableListener {
+  private static final Logger LOGGER = new Logger();
+
+  private static final boolean SAVE_PREVIEW_BITMAP = false;
+
+  // These are the settings for the original v1 Inception model. If you want to
+  // use a model that's been produced from the TensorFlow for Poets codelab,
+  // you'll need to set IMAGE_SIZE = 299, IMAGE_MEAN = 128, IMAGE_STD = 128,
+  // INPUT_NAME = "Mul:0", and OUTPUT_NAME = "final_result:0".
+  // You'll also need to update the MODEL_FILE and LABEL_FILE paths to point to
+  // the ones you produced.
+  private static final int NUM_CLASSES = 1001;
+  private static final int INPUT_SIZE = 224;
+  private static final int IMAGE_MEAN = 117;
+  private static final float IMAGE_STD = 1;
+  private static final String INPUT_NAME = "input:0";
+  private static final String OUTPUT_NAME = "output:0";
+
+  private static final String MODEL_FILE = "file:///android_asset/tensorflow_inception_graph.pb";
+  private static final String LABEL_FILE =
+      "file:///android_asset/imagenet_comp_graph_label_strings.txt";
+
+  private Integer sensorOrientation;
+
+  private final TensorFlowImageClassifier tensorflow = new TensorFlowImageClassifier();
+
+  private int previewWidth = 0;
+  private int previewHeight = 0;
+  private byte[][] yuvBytes;
+  private int[] rgbBytes = null;
+  private Bitmap rgbFrameBitmap = null;
+  private Bitmap croppedBitmap = null;
+
+  private boolean computing = false;
+  private Handler handler;
+
+  private RecognitionScoreView scoreView;
+
+  public void initialize(
+      final AssetManager assetManager,
+      final RecognitionScoreView scoreView,
+      final Handler handler,
+      final Integer sensorOrientation) {
+    Assert.assertNotNull(sensorOrientation);
+    try {
+      tensorflow.initializeTensorFlow(
+        assetManager, MODEL_FILE, LABEL_FILE, NUM_CLASSES, INPUT_SIZE, IMAGE_MEAN, IMAGE_STD,
+        INPUT_NAME, OUTPUT_NAME);
+    } catch (IOException e) {
+      LOGGER.e(e, "Exception!");
+    }
+    this.scoreView = scoreView;
+    this.handler = handler;
+    this.sensorOrientation = sensorOrientation;
+  }
+
+  private void drawResizedBitmap(final Bitmap src, final Bitmap dst) {
+    Assert.assertEquals(dst.getWidth(), dst.getHeight());
+    final float minDim = Math.min(src.getWidth(), src.getHeight());
+
+    final Matrix matrix = new Matrix();
+
+    // We only want the center square out of the original rectangle.
+    final float translateX = -Math.max(0, (src.getWidth() - minDim) / 2);
+    final float translateY = -Math.max(0, (src.getHeight() - minDim) / 2);
+    matrix.preTranslate(translateX, translateY);
+
+    final float scaleFactor = dst.getHeight() / minDim;
+    matrix.postScale(scaleFactor, scaleFactor);
+
+    // Rotate around the center if necessary.
+    if (sensorOrientation != 0) {
+      matrix.postTranslate(-dst.getWidth() / 2.0f, -dst.getHeight() / 2.0f);
+      matrix.postRotate(sensorOrientation);
+      matrix.postTranslate(dst.getWidth() / 2.0f, dst.getHeight() / 2.0f);
+>>>>>>> tensorflow/master:tensorflow/examples/android/src/org/tensorflow/demo/TensorFlowImageListener.java
+    }
+
+    private void drawResizedBitmap(final Bitmap src, final Bitmap dst) {
+        Assert.assertEquals(dst.getWidth(), dst.getHeight());
+        final float minDim = Math.min(src.getWidth(), src.getHeight());
+
+        final Matrix matrix = new Matrix();
+
+<<<<<<< HEAD:tensorflow/examples/android/src/org/tensorflow/demo/TensorflowImageListener.java
+        // We only want the center square out of the original rectangle.
+        final float translateX = -Math.max(0, (src.getWidth() - minDim) / 2);
+        final float translateY = -Math.max(0, (src.getHeight() - minDim) / 2);
+        matrix.preTranslate(translateX, translateY);
+
+        final float scaleFactor = dst.getHeight() / minDim;
+        matrix.postScale(scaleFactor, scaleFactor);
+
+        // Rotate around the center if necessary.
+        if (sensorOrientation != 0) {
+            matrix.postTranslate(-dst.getWidth() / 2.0f, -dst.getHeight() / 2.0f);
+            matrix.postRotate(sensorOrientation);
+            matrix.postTranslate(dst.getWidth() / 2.0f, dst.getHeight() / 2.0f);
+        }
+=======
+      if (image == null) {
+        return;
+      }
+
+      // No mutex needed as this method is not reentrant.
+      if (computing) {
+        image.close();
+        return;
+      }
+      computing = true;
+>>>>>>> tensorflow/master:tensorflow/examples/android/src/org/tensorflow/demo/TensorFlowImageListener.java
+
+        final Canvas canvas = new Canvas(dst);
+        canvas.drawBitmap(src, matrix, null);
+    }
+
+    @Override
+    public void onImageAvailable(final ImageReader reader) {
+        Image image = null;
+        try {
+            image = reader.acquireLatestImage();
+
+            if (image == null) {
+                return;
+            }
+
+            // No mutex needed as this method is not reentrant.
+            if (computing) {
+                image.close();
+                return;
+            }
+            computing = true;
+
+            Trace.beginSection("imageAvailable");
+
+      final Plane[] planes = image.getPlanes();
+
+      // Initialize the storage bitmaps once when the resolution is known.
+      if (previewWidth != image.getWidth() || previewHeight != image.getHeight()) {
+        previewWidth = image.getWidth();
+        previewHeight = image.getHeight();
+
+        LOGGER.i("Initializing at size %dx%d", previewWidth, previewHeight);
+        rgbBytes = new int[previewWidth * previewHeight];
+        rgbFrameBitmap = Bitmap.createBitmap(previewWidth, previewHeight, Config.ARGB_8888);
+        croppedBitmap = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Config.ARGB_8888);
+
+          // Initialize three Byte arrays to hold the three YUV planes
+        yuvBytes = new byte[planes.length][];
+        for (int i = 0; i < planes.length; ++i) {
+          yuvBytes[i] = new byte[planes[i].getBuffer().capacity()];
+        }
+      }
+
+      // Bulk transfer the bytes from each plane to the appropriate Byte array in yuvBytes[][]
+      for (int i = 0; i < planes.length; ++i) {
+        planes[i].getBuffer().get(yuvBytes[i]);
+      }
+
+      //By now yuvBytes should have three elements
+            // yuvBytes[0] contains all the Y pixels
+            // yuvBytes[1] contains all the U bytes
+            // yuvBytes[2] contains all the V bytes
+
+
+      final int yRowStride = planes[0].getRowStride();
+      final int uvRowStride = planes[1].getRowStride();
+      final int uvPixelStride = planes[1].getPixelStride();
+
+            // Convert the YUV byte arrays to RGB bytes saved in rgbBytes
+            // This is the JNI function defined in yuv2rgb.cc
+      ImageUtils.convertYUV420ToARGB8888(
+          yuvBytes[0],
+          yuvBytes[1],
+          yuvBytes[2],
+          rgbBytes,
+          previewWidth,
+          previewHeight,
+          yRowStride,
+          uvRowStride,
+          uvPixelStride,
+          false);
+
+      image.close();
+    } catch (final Exception e) {
+      if (image != null) {
+        image.close();
+      }
+      LOGGER.e(e, "Exception!");
+      Trace.endSection();
+      return;
+    }
+//
+//            final Plane[] planes = image.getPlanes();
+//
+//            // Initialize the storage bitmaps once when the resolution is known.
+//            if (previewWidth != image.getWidth() || previewHeight != image.getHeight()) {
+//                previewWidth = image.getWidth();
+//                previewHeight = image.getHeight();
+//
+//                rgbFrameBitmap = Bitmap.createBitmap(previewWidth, previewHeight, Config.ARGB_8888);
+//
+//                croppedBitmap = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Config.ARGB_8888);
+//
+//
+//                Buffer buffer = planes[0].getBuffer().rewind();
+////            rgbFrameBitmap.setPixels(rgbBytes, 0, previewWidth, 0, 0, previewWidth, previewHeight);
+//                rgbFrameBitmap.copyPixelsFromBuffer(buffer);
+////                rgbBytes = new byte[planes.length][];
+////                for (int i = 0; i < planes.length; ++i) {
+////                    rgbBytes[i] = new byte[planes[i].getBuffer().capacity()];
+////                }
+//            }
+
+            rgbFrameBitmap.setPixels(rgbBytes, 0, previewWidth, 0, 0, previewWidth, previewHeight);
+            // Resize image that the camera gave us to 28 x 28
+            drawResizedBitmap(rgbFrameBitmap, croppedBitmap);
+
+
+        //Get planes of croppedBitmap
+        croppedRgbBytes = new int[INPUT_SIZE * INPUT_SIZE];
+        croppedBitmap.getPixels(croppedRgbBytes, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE);
+
+        mnistPixelBytes = new byte[INPUT_SIZE * INPUT_SIZE];
+        ImageUtils.convertARGB8888ToMNISTPIXEL(
+                    croppedRgbBytes,       // input
+                    mnistPixelBytes, // output will be stored here
+                    INPUT_SIZE,
+                    INPUT_SIZE
+            );
+
+            // Prepare for format conversion
+            // Get croppedBitmap's bytes
+
+//            final Plane[] planes2 = croppedBitmap.getPlanes();
+//            rgbBytes = new byte[planes2[0].getBuffer().capacity()];
+
+//            rgbBytes = new byte[planes.length][];
+//            for (int i = 0; i < planes.length; ++i) {
+//                rgbBytes[i] = new byte[planes[i].getBuffer().capacity()];
+//            }
+
+            // Convert from RGB to mnist pixel values (from 0-255, which is white-black)
+//            ImageUtils.convertARGB8888ToMNISTPIXEL(
+//                    rgbBytes,       // input
+//                    mnistPixelBytes, // output will be stored here
+//                    INPUT_SIZE,
+//                    INPUT_SIZE
+//            );
+
+            // For examining the actual TF input.
+            if (SAVE_PREVIEW_BITMAP) {
+                file_path = ImageUtils.saveBitmap(croppedBitmap);
+            }
+        //computing = false;
+
+            handler.post(
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            final int result = tensorflow.classifyImageMnist(mnistPixelBytes);
+
+                            LOGGER.v("%d result", result);
+
+                            parentActivity.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+
+                                    parentFragment.updateResult("result: "+result);
+
+                                    if(file_path != null)
+                                    parentFragment.updateImage(file_path);
+                                    //stuff that updates ui
+
+                                }
+                            });
+
+                            computing = false;
+                        }
+                    });
+//
+//            Trace.endSection();
+//        } catch (final Exception e) {
+//            if (image != null) {
+//                image.close();
+//            }
+//            LOGGER.e(e, "Exception!");
+//            Trace.endSection();
+//            return;
+//        }
+    }
+}

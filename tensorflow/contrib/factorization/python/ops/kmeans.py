@@ -26,8 +26,9 @@ import tensorflow as tf
 from tensorflow.contrib.factorization.python.ops import clustering_ops
 from tensorflow.contrib.learn.python.learn.estimators import estimator
 from tensorflow.contrib.learn.python.learn.estimators._sklearn import TransformerMixin
-from tensorflow.contrib.learn.python.learn.io import data_feeder
-from tensorflow.contrib.learn.python.learn.utils import checkpoints
+from tensorflow.contrib.learn.python.learn.learn_io import data_feeder
+from tensorflow.contrib.learn.python.learn.monitors import BaseMonitor
+from tensorflow.python.ops import array_ops
 from tensorflow.python.ops.control_flow_ops import with_dependencies
 
 SQUARED_EUCLIDEAN_DISTANCE = clustering_ops.SQUARED_EUCLIDEAN_DISTANCE
@@ -54,12 +55,8 @@ class KMeansClustering(estimator.Estimator,
                distance_metric=clustering_ops.SQUARED_EUCLIDEAN_DISTANCE,
                random_seed=0,
                use_mini_batch=True,
-               batch_size=128,
-               steps=10,
                kmeans_plus_plus_num_retries=2,
-               continue_training=False,
-               config=None,
-               verbose=1):
+               config=None):
     """Creates a model for running KMeans training and inference.
 
     Args:
@@ -72,25 +69,17 @@ class KMeansClustering(estimator.Estimator,
       random_seed: Python integer. Seed for PRNG used to initialize centers.
       use_mini_batch: If true, use the mini-batch k-means algorithm. Else assume
         full batch.
-      batch_size: See TensorFlowEstimator
-      steps: See TensorFlowEstimator
       kmeans_plus_plus_num_retries: For each point that is sampled during
         kmeans++ initialization, this parameter specifies the number of
         additional points to draw from the current distribution before selecting
         the best. If a negative value is specified, a heuristic is used to
         sample O(log(num_to_sample)) additional points.
-      continue_training: See TensorFlowEstimator
-      config: See TensorFlowEstimator
-      verbose: See TensorFlowEstimator
+      config: See Estimator
     """
     super(KMeansClustering, self).__init__(
         model_dir=model_dir,
         config=config)
-    self.batch_size = batch_size
-    self.steps = steps
     self.kmeans_plus_plus_num_retries = kmeans_plus_plus_num_retries
-    self.continue_training = continue_training
-    self.verbose = verbose
     self._num_clusters = num_clusters
     self._training_initial_clusters = initial_clusters
     self._training_graph = None
@@ -99,10 +88,46 @@ class KMeansClustering(estimator.Estimator,
     self._random_seed = random_seed
     self._initialized = False
 
-  def fit(self, x, y=None, monitors=None, logdir=None, steps=None):
+# pylint: disable=protected-access
+  class _StopWhenConverged(BaseMonitor):
+    """Stops when the change in loss goes below a tolerance."""
+
+    def __init__(self, tolerance):
+      """Initializes a '_StopWhenConverged' monitor.
+
+      Args:
+        tolerance: A relative tolerance of change between iterations.
+      """
+      super(KMeansClustering._StopWhenConverged, self).__init__()
+      self._tolerance = tolerance
+
+    def begin(self, max_steps):
+      super(KMeansClustering._StopWhenConverged, self).begin(max_steps)
+      self._prev_loss = None
+
+    def step_begin(self, step):
+      super(KMeansClustering._StopWhenConverged, self).step_begin(step)
+      return [self._estimator._loss]
+
+    def step_end(self, step, output):
+      super(KMeansClustering._StopWhenConverged, self).step_end(step, output)
+      loss = output[self._estimator._loss]
+
+      if self._prev_loss is None:
+        self._prev_loss = loss
+        return False
+
+      relative_change = (abs(loss - self._prev_loss)
+                         / (1 + abs(self._prev_loss)))
+      self._prev_loss = loss
+      return relative_change < self._tolerance
+# pylint: enable=protected-access
+
+  def fit(self, x, y=None, monitors=None, logdir=None, steps=None, batch_size=128,
+          relative_tolerance=None):
     """Trains a k-means clustering on x.
 
-    Note: See TensorFlowEstimator for logic for continuous training and graph
+    Note: See Estimator for logic for continuous training and graph
       construction across multiple calls to fit.
 
     Args:
@@ -114,6 +139,10 @@ class KMeansClustering(estimator.Estimator,
         visualization.
       steps: number of training steps. If not None, overrides the value passed
         in constructor.
+      batch_size: mini-batch size to use. Requires `use_mini_batch=True`.
+      relative_tolerance: A relative tolerance of change in the loss between
+        iterations.  Stops learning if the loss changes less than this amount.
+        Note that this may not work correctly if use_mini_batch=True.
 
     Returns:
       Returns self.
@@ -122,10 +151,18 @@ class KMeansClustering(estimator.Estimator,
     if logdir is not None:
       self._model_dir = logdir
     self._data_feeder = data_feeder.setup_train_data_feeder(
-        x, None, self._num_clusters, self.batch_size)
+        x, None, self._num_clusters, batch_size if self._use_mini_batch else None)
+    if relative_tolerance is not None:
+      if monitors is not None:
+        monitors += [self._StopWhenConverged(relative_tolerance)]
+      else:
+        monitors = [self._StopWhenConverged(relative_tolerance)]
+    # Make sure that we will eventually terminate.
+    assert ((monitors is not None and len(monitors)) or (steps is not None)
+            or (self.steps is not None))
     self._train_model(input_fn=self._data_feeder.input_builder,
                       feed_fn=self._data_feeder.get_feed_dict_fn(),
-                      steps=steps or self.steps,
+                      steps=steps,
                       monitors=monitors,
                       init_feed_fn=self._data_feeder.get_feed_dict_fn())
     return self
@@ -140,8 +177,10 @@ class KMeansClustering(estimator.Estimator,
     Returns:
       Array with same number of rows as x, containing cluster ids.
     """
-    return super(KMeansClustering, self).predict(
-        x=x, batch_size=batch_size)[KMeansClustering.CLUSTER_IDX]
+    return np.array([
+        prediction[KMeansClustering.CLUSTER_IDX] for prediction in
+        super(KMeansClustering, self).predict(
+            x=x, batch_size=batch_size, as_iterable=True)])
 
   def score(self, x, batch_size=None):
     """Predict total sum of distances to nearest clusters.
@@ -175,19 +214,26 @@ class KMeansClustering(estimator.Estimator,
       Array with same number of rows as x, and num_clusters columns, containing
       distances to the cluster centers.
     """
-    return super(KMeansClustering, self).predict(
-        x=x, batch_size=batch_size)[KMeansClustering.ALL_SCORES]
+    return np.array([
+        prediction[KMeansClustering.ALL_SCORES] for prediction in
+        super(KMeansClustering, self).predict(
+            x=x, batch_size=batch_size, as_iterable=True)])
 
   def clusters(self):
     """Returns cluster centers."""
-    return checkpoints.load_variable(self.model_dir, self.CLUSTERS)
+    return tf.contrib.framework.load_variable(self.model_dir, self.CLUSTERS)
+
+  def _parse_tensor_or_dict(self, features):
+    if isinstance(features, dict):
+      return array_ops.concat(1, [features[k] for k in sorted(features.keys())])
+    return features
 
   def _get_train_ops(self, features, _):
     (_,
      _,
      losses,
      training_op) = clustering_ops.KMeans(
-         features,
+         self._parse_tensor_or_dict(features),
          self._num_clusters,
          self._training_initial_clusters,
          self._distance_metric,
@@ -196,16 +242,16 @@ class KMeansClustering(estimator.Estimator,
          kmeans_plus_plus_num_retries=self.kmeans_plus_plus_num_retries
      ).training_graph()
     incr_step = tf.assign_add(tf.contrib.framework.get_global_step(), 1)
-    loss = tf.reduce_sum(losses)
-    training_op = with_dependencies([training_op, incr_step], loss)
-    return training_op, loss
+    self._loss = tf.reduce_sum(losses)
+    training_op = with_dependencies([training_op, incr_step], self._loss)
+    return training_op, self._loss
 
   def _get_predict_ops(self, features):
     (all_scores,
      model_predictions,
      _,
      _) = clustering_ops.KMeans(
-         features,
+         self._parse_tensor_or_dict(features),
          self._num_clusters,
          self._training_initial_clusters,
          self._distance_metric,
@@ -223,7 +269,7 @@ class KMeansClustering(estimator.Estimator,
      _,
      losses,
      _) = clustering_ops.KMeans(
-         features,
+         self._parse_tensor_or_dict(features),
          self._num_clusters,
          self._training_initial_clusters,
          self._distance_metric,
@@ -234,4 +280,3 @@ class KMeansClustering(estimator.Estimator,
     return {
         KMeansClustering.SCORES: tf.reduce_sum(losses),
     }
-
