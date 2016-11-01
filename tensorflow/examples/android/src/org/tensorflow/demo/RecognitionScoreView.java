@@ -29,6 +29,7 @@ import java.util.List;
 public class RecognitionScoreView extends View implements ResultsView {
   private static final float TEXT_SIZE_DIP = 24;
   private List<Recognition> results;
+  private int intResult;
   private final float textSizePx;
   private final Paint fgPaint;
   private final Paint bgPaint;
@@ -44,11 +45,20 @@ public class RecognitionScoreView extends View implements ResultsView {
 
     bgPaint = new Paint();
     bgPaint.setColor(0xcc4285f4);
+
+    intResult = -1;
   }
 
   @Override
   public void setResults(final List<Recognition> results) {
     this.results = results;
+    postInvalidate();
+  }
+
+
+  @Override
+  public void setResults(final int results) {
+    this.intResult = results;
     postInvalidate();
   }
 
@@ -64,6 +74,11 @@ public class RecognitionScoreView extends View implements ResultsView {
         canvas.drawText(recog.getTitle() + ": " + recog.getConfidence(), x, y, fgPaint);
         y += fgPaint.getTextSize() * 1.5f;
       }
+    }
+    else if( intResult != -1){
+
+      canvas.drawText( "result: " + intResult, x, y, fgPaint);
+      y += fgPaint.getTextSize() * 1.5f;
     }
   }
 }

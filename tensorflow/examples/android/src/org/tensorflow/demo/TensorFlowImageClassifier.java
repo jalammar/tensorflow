@@ -167,6 +167,64 @@ public class TensorFlowImageClassifier implements Classifier {
     return recognitions;
   }
 
+  public native int recognizeMnistImage(byte[] image);
+
+  @Override
+  public List<Recognition> callRecognizeMnistImage(byte[] image)
+  {
+
+    // Log this method so that it can be analyzed with systrace.
+    Trace.beginSection("recognizeImage");
+
+    Trace.beginSection("preprocessBitmap");
+    // Preprocess the image data from 0-255 int to normalized float based
+    // on the provided parameters.
+    for (int i = 0; i < image.length; ++i) {
+      floatValues[i] = image[i];
+    }
+    Trace.endSection();
+
+    // Copy the input data into TensorFlow.
+    Trace.beginSection("fillNodeFloat");
+    inferenceInterface.fillNodeFloat(inputName, 1, inputSize, inputSize, 3, floatValues);
+    Trace.endSection();
+
+    // Run the inference call.
+    Trace.beginSection("runInference");
+    inferenceInterface.runInference(outputNames);
+    Trace.endSection();
+
+    // Copy the output Tensor back into the output array.
+    Trace.beginSection("readNodeFloat");
+    inferenceInterface.readNodeFloat(outputName, outputs);
+    Trace.endSection();
+
+    // Find the best classifications.
+    PriorityQueue<Recognition> pq = new PriorityQueue<Recognition>(3,
+            new Comparator<Recognition>() {
+              @Override
+              public int compare(Recognition lhs, Recognition rhs) {
+                // Intentionally reversed to put high confidence at the head of the queue.
+                return Float.compare(rhs.getConfidence(), lhs.getConfidence());
+              }
+            });
+    for (int i = 0; i < outputs.length; ++i) {
+      if (outputs[i] > THRESHOLD) {
+        pq.add(new Recognition(
+                "" + i, labels.get(i), outputs[i], null));
+      }
+    }
+    final ArrayList<Recognition> recognitions = new ArrayList<Recognition>();
+    for (int i = 0; i < Math.min(pq.size(), MAX_RESULTS); ++i) {
+      recognitions.add(pq.poll());
+    }
+    Trace.endSection(); // "recognizeImage"
+    return recognitions;
+
+
+  }
+
+
   @Override
   public void close() {
     inferenceInterface.close();

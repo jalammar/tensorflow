@@ -97,6 +97,7 @@ public interface Classifier {
   }
 
   List<Recognition> recognizeImage(Bitmap bitmap);
+  List<Recognition> callRecognizeMnistImage(byte[] image);
 
   void close();
 }

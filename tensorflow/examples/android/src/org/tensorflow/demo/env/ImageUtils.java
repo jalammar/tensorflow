@@ -151,4 +151,18 @@ public class ImageUtils {
    */
   public static native void convertRGB565ToYUV420SP(
       byte[] input, byte[] output, int width, int height);
+
+
+  /**
+   * Converts 32-bit ARGB8888 image data to MNIST data.  This is needed to prepare image
+   * data for the MNIST model.
+   *
+   * @param input An array of input pixels in ARGB8888 format.
+   * @param output A pre-allocated array for the MNIST output data.
+   * @param width The width of the input image.
+   * @param height The height of the input image.
+   */
+  public static native void convertARGB8888ToMNISTPIXEL(
+          int[] input, byte[] output, int width, int height);
+
 }

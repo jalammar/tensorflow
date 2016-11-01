@@ -24,23 +24,21 @@ import org.tensorflow.demo.env.Logger;
 public class ClassifierActivity extends CameraActivity {
   private static final Logger LOGGER = new Logger();
 
-  // These are the settings for the original v1 Inception model. If you want to
-  // use a model that's been produced from the TensorFlow for Poets codelab,
-  // you'll need to set IMAGE_SIZE = 299, IMAGE_MEAN = 128, IMAGE_STD = 128,
-  // INPUT_NAME = "Mul:0", and OUTPUT_NAME = "final_result:0".
-  // You'll also need to update the MODEL_FILE and LABEL_FILE paths to point to
-  // the ones you produced.
-  private static final int NUM_CLASSES = 1001;
-  private static final int INPUT_SIZE = 224;
+  // The settins for the MNIST model
+  private static final int NUM_CLASSES = 10;
+  private static final int INPUT_SIZE = 28; // MNIST images are 28 x 28 pixels
   private static final int IMAGE_MEAN = 117;
   private static final float IMAGE_STD = 1;
-  private static final String INPUT_NAME = "input:0";
-  private static final String OUTPUT_NAME = "output:0";
+//  private static final String INPUT_NAME = "input:0";
+//  private static final String OUTPUT_NAME = "softmax";
+  private static final String INPUT_NAME = "x";
+  private static final String OUTPUT_NAME = "y_conv";
 
-  //
-  private static final String MODEL_FILE = "file:///android_asset/tensorflow_inception_graph.pb";
+
+  //private static final String MODEL_FILE = "file:///android_asset/frozen_output_graph.pb";
+//  private static final String MODEL_FILE = "file:///android_asset/optimized_inception_graph.pb";
   private static final String LABEL_FILE =
-      "file:///android_asset/imagenet_comp_graph_label_strings.txt";
+      "file:///android_asset/mnist_labels.txt";
 
   @Override
   protected Fragment createFragment() {

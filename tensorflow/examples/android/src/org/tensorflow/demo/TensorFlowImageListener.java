@@ -37,7 +37,7 @@ import java.util.List;
 public class TensorFlowImageListener implements OnImageAvailableListener {
   private static final Logger LOGGER = new Logger();
 
-  private static final boolean SAVE_PREVIEW_BITMAP = false;
+  private static final boolean SAVE_PREVIEW_BITMAP = true;
 
   private Integer sensorOrientation;
 
@@ -48,6 +48,8 @@ public class TensorFlowImageListener implements OnImageAvailableListener {
   private int inputSize = 0;
   private byte[][] yuvBytes;
   private int[] rgbBytes = null;
+  private int[] croppedRgbBytes = null;
+  private byte[] mnistPixelBytes = null;
   private Bitmap rgbFrameBitmap = null;
   private Bitmap croppedBitmap = null;
 
@@ -126,12 +128,14 @@ public class TensorFlowImageListener implements OnImageAvailableListener {
         rgbFrameBitmap = Bitmap.createBitmap(previewWidth, previewHeight, Config.ARGB_8888);
         croppedBitmap = Bitmap.createBitmap(inputSize, inputSize, Config.ARGB_8888);
 
+        // Initialize three Byte arrays to hold the three YUV planes
         yuvBytes = new byte[planes.length][];
         for (int i = 0; i < planes.length; ++i) {
           yuvBytes[i] = new byte[planes[i].getBuffer().capacity()];
         }
       }
 
+      // Bulk transfer the bytes from each plane to the appropriate Byte array in yuvBytes[][]
       for (int i = 0; i < planes.length; ++i) {
         planes[i].getBuffer().get(yuvBytes[i]);
       }
@@ -164,16 +168,32 @@ public class TensorFlowImageListener implements OnImageAvailableListener {
     rgbFrameBitmap.setPixels(rgbBytes, 0, previewWidth, 0, 0, previewWidth, previewHeight);
     drawResizedBitmap(rgbFrameBitmap, croppedBitmap);
 
+
     // For examining the actual TF input.
     if (SAVE_PREVIEW_BITMAP) {
       ImageUtils.saveBitmap(croppedBitmap);
     }
 
+
+    //Get planes of croppedBitmap
+    croppedRgbBytes = new int[inputSize * inputSize];
+    croppedBitmap.getPixels(croppedRgbBytes, 0, inputSize, 0, 0, inputSize, inputSize);
+
+    mnistPixelBytes = new byte[inputSize * inputSize];
+    ImageUtils.convertARGB8888ToMNISTPIXEL(
+            croppedRgbBytes, // input
+            mnistPixelBytes, // output will be stored here
+            inputSize,
+            inputSize
+    );
+
+
+
     handler.post(
         new Runnable() {
           @Override
           public void run() {
-            final List<Classifier.Recognition> results = tensorflow.recognizeImage(croppedBitmap);
+            final List<Classifier.Recognition> results = tensorflow.callRecognizeMnistImage(mnistPixelBytes);
 
             LOGGER.v("%d results", results.size());
             for (final Classifier.Recognition result : results) {

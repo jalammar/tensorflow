@@ -21,8 +21,10 @@ limitations under the License.
 #include <stdlib.h>
 
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/examples/android/jni/rgb2yuv.h"
 #include "tensorflow/examples/android/jni/yuv2rgb.h"
+#include "tensorflow/examples/android/jni/rgb2mnist_pixel.h"
 
 #define IMAGEUTILS_METHOD(METHOD_NAME) \
   Java_org_tensorflow_demo_env_ImageUtils_##METHOD_NAME  // NOLINT
@@ -55,6 +57,11 @@ IMAGEUTILS_METHOD(convertARGB8888ToYUV420SP)(
 JNIEXPORT void JNICALL
 IMAGEUTILS_METHOD(convertRGB565ToYUV420SP)(
     JNIEnv* env, jclass clazz, jbyteArray input, jbyteArray output,
+    jint width, jint height);
+
+JNIEXPORT void JNICALL
+IMAGEUTILS_METHOD(convertARGB8888ToMNISTPIXEL)(
+    JNIEnv* env, jclass clazz, jintArray input, jbyteArray output,
     jint width, jint height);
 
 #ifdef __cplusplus
@@ -168,3 +175,24 @@ IMAGEUTILS_METHOD(convertRGB565ToYUV420SP)(
   env->ReleaseByteArrayElements(input, i, JNI_ABORT);
   env->ReleaseByteArrayElements(output, o, 0);
 }
+
+
+
+JNIEXPORT void JNICALL
+IMAGEUTILS_METHOD(convertARGB8888ToMNISTPIXEL)(
+    JNIEnv* env, jclass clazz, jintArray input, jbyteArray output,
+    jint width, jint height) {
+  jboolean inputCopy = JNI_FALSE;
+  jint* const i = env->GetIntArrayElements(input, &inputCopy);
+
+  jboolean outputCopy = JNI_FALSE;
+  jbyte* const o = env->GetByteArrayElements(output, &outputCopy);
+
+  ConvertARGB8888ToMNISTPIXEL(reinterpret_cast<uint32*>(i),
+                            reinterpret_cast<uint8*>(o),
+                            width, height);
+
+  env->ReleaseIntArrayElements(input, i, JNI_ABORT);
+  env->ReleaseByteArrayElements(output, o, 0);
+}
+

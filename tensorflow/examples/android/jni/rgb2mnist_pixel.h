@@ -1,4 +1,4 @@
-/* Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,13 +13,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-package org.tensorflow.demo;
+#ifndef ORG_TENSORFLOW_JNI_IMAGEUTILS_RGB2MNIST_PIXEL_H_
+#define ORG_TENSORFLOW_JNI_IMAGEUTILS_RGB2MNIST_PIXEL_H_
 
-import org.tensorflow.demo.Classifier.Recognition;
+#include "tensorflow/core/platform/types.h"
 
-import java.util.List;
+using namespace tensorflow;
 
-public interface ResultsView {
-  public void setResults(final List<Recognition> results);
-  public void setResults(final int result);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void ConvertARGB8888ToMNISTPIXEL(const uint32* const input, uint8* const output,
+                               int width, int height);
+
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif  // ORG_TENSORFLOW_JNI_IMAGEUTILS_RGB2YUV_H_
