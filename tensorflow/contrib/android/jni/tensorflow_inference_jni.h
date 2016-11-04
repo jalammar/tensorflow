@@ -56,6 +56,14 @@ READ_NODE_SIGNATURE(Float, float);
 READ_NODE_SIGNATURE(Int, int);
 READ_NODE_SIGNATURE(Double, double);
 
+
+
+JNIEXPORT jint JNICALL TENSORFLOW_METHOD(classifyImageMnist)(JNIEnv* env,
+                                                                jobject thiz,
+                                                                jint x,
+                                                                jint y,
+                                                                jbyteArray image);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

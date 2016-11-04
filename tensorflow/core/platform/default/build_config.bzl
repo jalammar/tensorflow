@@ -155,6 +155,6 @@ def tf_additional_lib_deps():
   deps = []
   if WITH_GCP_SUPPORT:
     deps.append("//tensorflow/core/platform/cloud:gcs_file_system")
-  if WITH_HDFS_SUPPORT:
-    deps.append("//tensorflow/core/platform/hadoop:hadoop_file_system")
+#  if WITH_HDFS_SUPPORT:
+#    deps.append("//tensorflow/core/platform/hadoop:hadoop_file_system")
   return deps

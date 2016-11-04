@@ -32,4 +32,4 @@ void ConvertARGB8888ToMNISTPIXEL(const uint32* const input, uint8* const output,
 }
 #endif
 
-#endif  // ORG_TENSORFLOW_JNI_IMAGEUTILS_RGB2YUV_H_
+#endif  // ORG_TENSORFLOW_JNI_IMAGEUTILS_RGB2MNIST_PIXEL_H_

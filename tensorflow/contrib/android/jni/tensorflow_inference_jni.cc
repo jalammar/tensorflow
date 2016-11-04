@@ -270,3 +270,69 @@ FILL_NODE_METHOD(Double, double, tensorflow::DT_DOUBLE)
 READ_NODE_METHOD(Float, float)
 READ_NODE_METHOD(Int, int)
 READ_NODE_METHOD(Double, double)
+
+
+
+
+JNIEXPORT jint JNICALL TENSORFLOW_METHOD(classifyImageMnist)(JNIEnv* env,
+                                                              jobject thiz,
+                                                              jint x,
+                                                              jint y,
+                                                              jbyteArray image) {
+
+  SessionVariables* vars = GetSessionVars(env, thiz);
+
+  int image_size = x * y;
+  Tensor input_tensor(  tensorflow::DT_FLOAT,
+                        tensorflow::TensorShape( {1, image_size}));
+
+  auto input_tensor_mapped = input_tensor.tensor<float, 2>();
+
+ // Copy image into currFrame.
+  jboolean iCopied = JNI_FALSE;
+  jbyte* pixels = env->GetByteArrayElements(image, &iCopied);
+  for(int i = 0; i < image_size; i++){
+    input_tensor_mapped(0, i) = pixels[i];
+  }
+
+
+
+  std::vector<std::pair<std::string, tensorflow::Tensor> > input_tensors(
+      {{"input_node", input_tensor}});
+
+  LOG(INFO) << "Start computing.";
+
+  std::vector<tensorflow::Tensor> output_tensors;
+  std::vector<std::string> output_names({"output_node"});
+
+  tensorflow::Status s;
+
+  s = vars->session->Run(input_tensors, output_names, {}, &output_tensors);
+
+  LOG(INFO) << "End computing.";
+
+
+    if (!s.ok()) {
+        LOG(ERROR) << "Error during inference: " << s;
+        return -1;
+    }
+
+    // Find best score digit
+    Tensor& output_tensor = output_tensors[0];
+    tensorflow::TTypes<float>::Flat output_flat = output_tensor.flat<float>();
+
+    float max_score = std::numeric_limits<float>::min();
+    int maxIndex = -1;
+
+    for(int i=0; i<10; ++i) {
+        const float score = output_flat(i);
+        if( score > max_score ) {
+            maxIndex = i;
+            max_score = score;
+        }
+
+        VLOG(0) <<  " (" << i << "): " << score;
+    }
+
+    return maxIndex;
+}

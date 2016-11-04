@@ -31,12 +31,12 @@ public class ClassifierActivity extends CameraActivity {
   private static final float IMAGE_STD = 1;
 //  private static final String INPUT_NAME = "input:0";
 //  private static final String OUTPUT_NAME = "softmax";
-  private static final String INPUT_NAME = "x";
-  private static final String OUTPUT_NAME = "y_conv";
+  private static final String INPUT_NAME = "input_node";
+  private static final String OUTPUT_NAME = "output_node";
 
 
   //private static final String MODEL_FILE = "file:///android_asset/frozen_output_graph.pb";
-//  private static final String MODEL_FILE = "file:///android_asset/optimized_inception_graph.pb";
+  private static final String MODEL_FILE = "file:///android_asset/frozen_output_graph_17.pb";
   private static final String LABEL_FILE =
       "file:///android_asset/mnist_labels.txt";
 

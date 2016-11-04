@@ -72,4 +72,7 @@ public class TensorFlowInferenceInterface {
   public native void readNodeFloat(String outputName, float[] values);
   public native void readNodeInt(String outputName, int[] values);
   public native void readNodeDouble(String outputName, double[] values);
+
+
+  public native int classifyImageMnist(int x, int y, byte[] image);
 }
